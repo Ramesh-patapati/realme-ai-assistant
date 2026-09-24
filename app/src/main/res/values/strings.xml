@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">AI Voice Assistant</string>
+    <string name="notification_service_label">AI Assistant Notification Reader</string>
+    <string name="service_running_title">AI Assistant is Active</string>
+    <string name="service_running_desc">Listening for lock screen events &amp; notifications</string>
+    <string name="accessibility_service_desc">Enables SiriPulse AI to automate on-screen taps, typing, navigation, and total phone control per your explicit voice commands.</string>
+</resources>
