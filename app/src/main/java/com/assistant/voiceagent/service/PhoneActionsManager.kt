@@ -161,4 +161,35 @@ class PhoneActionsManager(private val context: Context) {
             context.startActivity(webIntent)
         }
     }
+
+    fun sendWhatsApp(contactName: String, message: String) {
+        val phoneNumber = if (contactName.matches(Regex("^[0-9+ ]+$"))) {
+            contactName.replace(" ", "")
+        } else {
+            val found = findPhoneNumberByName(contactName)
+            if (found is FindResult.Found) found.number.replace(" ", "") else ""
+        }
+
+        try {
+            val cleanNumber = phoneNumber.replace("+", "").trim()
+            val uri = if (cleanNumber.isNotBlank()) {
+                Uri.parse("https://api.whatsapp.com/send?phone=$cleanNumber&text=${Uri.encode(message)}")
+            } else {
+                Uri.parse("https://api.whatsapp.com/send?text=${Uri.encode(message)}")
+            }
+            val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+                setPackage("com.whatsapp")
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                setPackage("com.whatsapp")
+                putExtra(Intent.EXTRA_TEXT, message)
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            context.startActivity(sendIntent)
+        }
+    }
 }

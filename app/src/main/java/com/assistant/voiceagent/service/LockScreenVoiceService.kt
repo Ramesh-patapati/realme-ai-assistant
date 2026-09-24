@@ -279,7 +279,9 @@ class LockScreenVoiceService : Service() {
             }
 
             is AIAction.SendWhatsApp -> {
-                speakAndResume("Sending message to ${action.contactName}")
+                speakAndResume("Sending message to ${action.contactName}") {
+                    phoneActionsManager.sendWhatsApp(action.contactName, action.message)
+                }
             }
 
             is AIAction.Answer -> {
