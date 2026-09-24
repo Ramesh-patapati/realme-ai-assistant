@@ -88,8 +88,8 @@ class WhatsAppNotificationService : NotificationListenerService() {
     }
 
     private fun sendQuickReply(sbn: StatusBarNotification, replyText: String): Boolean {
-        val actions = NotificationCompat.getActions(sbn.notification)
-        if (actions == null || actions.isEmpty()) return false
+        val actions = sbn.notification.actions
+        if (actions.isNullOrEmpty()) return false
 
         for (action in actions) {
             val remoteInputs = action.remoteInputs
