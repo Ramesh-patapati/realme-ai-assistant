@@ -2,15 +2,23 @@ package com.assistant.voiceagent.service
 
 import android.util.Log
 import com.assistant.voiceagent.model.AIAction
+import kotlinx.coroutines.suspendCancellableCoroutine
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 class OpenAiProvider(private val client: OkHttpClient) {
 
+    // Strict OpenAI Function Calling Schema (strict: true, additionalProperties: false, all properties required)
     private val toolsJsonArray = JSONArray("""
         [
             {
@@ -18,12 +26,17 @@ class OpenAiProvider(private val client: OkHttpClient) {
                 "function": {
                     "name": "call_contact",
                     "description": "Call a phone contact by name",
+                    "strict": true,
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "contact_name": {"type": "string", "description": "Name of the contact"}
+                            "contact_name": {
+                                "type": "string",
+                                "description": "The name of the person or contact to call"
+                            }
                         },
-                        "required": ["contact_name"]
+                        "required": ["contact_name"],
+                        "additionalProperties": false
                     }
                 }
             },
@@ -32,13 +45,21 @@ class OpenAiProvider(private val client: OkHttpClient) {
                 "function": {
                     "name": "send_whatsapp",
                     "description": "Send a WhatsApp message to a contact",
+                    "strict": true,
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "contact_name": {"type": "string", "description": "Name of the person"},
-                            "message": {"type": "string", "description": "Message text"}
+                            "contact_name": {
+                                "type": "string",
+                                "description": "The name of the person to message"
+                            },
+                            "message": {
+                                "type": "string",
+                                "description": "The exact message content to send"
+                            }
                         },
-                        "required": ["contact_name", "message"]
+                        "required": ["contact_name", "message"],
+                        "additionalProperties": false
                     }
                 }
             },
@@ -46,13 +67,18 @@ class OpenAiProvider(private val client: OkHttpClient) {
                 "type": "function",
                 "function": {
                     "name": "play_youtube",
-                    "description": "Play a song or video on YouTube",
+                    "description": "Play a song, artist, or search video on YouTube",
+                    "strict": true,
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "query": {"type": "string", "description": "Song title or video search query"}
+                            "query": {
+                                "type": "string",
+                                "description": "The song title, artist, or video search query"
+                            }
                         },
-                        "required": ["query"]
+                        "required": ["query"],
+                        "additionalProperties": false
                     }
                 }
             },
@@ -60,14 +86,22 @@ class OpenAiProvider(private val client: OkHttpClient) {
                 "type": "function",
                 "function": {
                     "name": "order_food",
-                    "description": "Order food item via Zomato",
+                    "description": "Order food item via Zomato delivery",
+                    "strict": true,
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "item": {"type": "string", "description": "Food item to order"},
-                            "restaurant": {"type": "string", "description": "Optional restaurant name"}
+                            "item": {
+                                "type": "string",
+                                "description": "The food item dish to order"
+                            },
+                            "restaurant": {
+                                "type": "string",
+                                "description": "Optional restaurant name, or empty string if not specified"
+                            }
                         },
-                        "required": ["item"]
+                        "required": ["item", "restaurant"],
+                        "additionalProperties": false
                     }
                 }
             },
@@ -75,17 +109,23 @@ class OpenAiProvider(private val client: OkHttpClient) {
                 "type": "function",
                 "function": {
                     "name": "device_control",
-                    "description": "Control device navigation or hardware",
+                    "description": "Control device navigation or hardware action",
+                    "strict": true,
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "command": {
                                 "type": "string",
-                                "enum": ["HOME", "BACK", "SCREENSHOT", "NOTIFICATIONS", "LOCK", "SCROLL_DOWN", "SCROLL_UP"]
+                                "enum": ["HOME", "BACK", "SCREENSHOT", "NOTIFICATIONS", "LOCK", "SCROLL_DOWN", "SCROLL_UP"],
+                                "description": "The hardware navigation command"
                             },
-                            "speech": {"type": "string", "description": "Spoken confirmation to the user"}
+                            "speech": {
+                                "type": "string",
+                                "description": "Short spoken feedback to the user"
+                            }
                         },
-                        "required": ["command", "speech"]
+                        "required": ["command", "speech"],
+                        "additionalProperties": false
                     }
                 }
             },
@@ -93,26 +133,31 @@ class OpenAiProvider(private val client: OkHttpClient) {
                 "type": "function",
                 "function": {
                     "name": "clarify",
-                    "description": "Ask clarification when critical information is missing",
+                    "description": "Ask the user a short clarifying question when critical details are missing",
+                    "strict": true,
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "question": {"type": "string", "description": "Polite question asking for missing info"}
+                            "question": {
+                                "type": "string",
+                                "description": "The polite question asking for the missing info"
+                            }
                         },
-                        "required": ["question"]
+                        "required": ["question"],
+                        "additionalProperties": false
                     }
                 }
             }
         ]
     """.trimIndent())
 
-    fun callOpenAiWithTools(userInput: String, apiKey: String): AIAction {
+    suspend fun callOpenAiWithTools(userInput: String, apiKey: String): AIAction {
         val payload = JSONObject().apply {
             put("model", "gpt-4o-mini")
             put("messages", JSONArray().apply {
                 put(JSONObject().apply {
                     put("role", "system")
-                    put("content", "You are Jarvis, an ultra-fast voice assistant on an Android phone. Use tools to perform device actions. For general questions, respond directly in 1-2 punchy spoken sentences.")
+                    put("content", "You are Jarvis, a fast voice assistant on Android. Use tools to execute phone actions. For general knowledge, answer in 1-2 concise spoken sentences.")
                 })
                 put(JSONObject().apply {
                     put("role", "user")
@@ -122,7 +167,7 @@ class OpenAiProvider(private val client: OkHttpClient) {
             put("tools", toolsJsonArray)
             put("tool_choice", "auto")
             put("max_tokens", 150)
-            put("temperature", 0.3)
+            put("temperature", 0.2)
         }
 
         val request = Request.Builder()
@@ -132,50 +177,59 @@ class OpenAiProvider(private val client: OkHttpClient) {
             .post(payload.toString().toRequestBody("application/json".toMediaType()))
             .build()
 
-        client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                val errorBody = response.body?.string() ?: ""
-                Log.e("OpenAiProvider", "OpenAI error ${response.code}: $errorBody")
-                return AIAction.Answer("OpenAI service returned an error. Please check your API key.")
+        val response = client.newCall(request).await()
+        response.use { resp ->
+            if (!resp.isSuccessful) {
+                val errorBody = resp.body?.string() ?: ""
+                Log.e("OpenAiProvider", "OpenAI HTTP error ${resp.code}: $errorBody")
+                return AIAction.Answer("OpenAI service returned an error. Please verify your API key.")
             }
 
-            val body = response.body?.string() ?: return AIAction.Answer("Empty response received.")
+            val body = resp.body?.string() ?: return AIAction.Answer("Empty response from OpenAI.")
             val json = JSONObject(body)
             val choices = json.optJSONArray("choices") ?: return AIAction.Answer("No choices returned.")
             if (choices.length() == 0) return AIAction.Answer("No response generated.")
 
             val message = choices.getJSONObject(0).getJSONObject("message")
 
-            // Check for tool calls first (Function Calling)
+            // Parse tool calls if returned
             val toolCalls = message.optJSONArray("tool_calls")
             if (toolCalls != null && toolCalls.length() > 0) {
                 val toolCall = toolCalls.getJSONObject(0)
-                val functionObj = toolCall.getJSONObject("function")
-                val functionName = functionObj.getString("name")
-                val arguments = JSONObject(functionObj.getString("arguments"))
-                Log.d("OpenAiProvider", "Tool invoked: $functionName with args: $arguments")
+                val functionObj = toolCall.optJSONObject("function") ?: return AIAction.Answer("Invalid tool call structure.")
+                val functionName = functionObj.optString("name", "")
+                val argumentsStr = functionObj.optString("arguments", "{}")
+                val arguments = try { JSONObject(argumentsStr) } catch (e: Exception) { JSONObject() }
+
+                Log.d("OpenAiProvider", "Strict Tool Invoked: $functionName with arguments: $arguments")
 
                 return when (functionName) {
                     "call_contact" -> {
-                        val contact = arguments.optString("contact_name", "")
-                        if (contact.isNotBlank()) AIAction.Call(contact) else AIAction.Clarify("Who would you like to call?")
+                        val contact = arguments.optString("contact_name", "").trim()
+                        if (contact.isNotBlank()) AIAction.Call(contact) else AIAction.Clarify("Who would you like me to call?")
                     }
                     "send_whatsapp" -> {
-                        val contact = arguments.optString("contact_name", "")
-                        val text = arguments.optString("message", "")
-                        if (contact.isNotBlank() && text.isNotBlank()) AIAction.SendWhatsApp(contact, text) else AIAction.Clarify("What message should I send to $contact?")
+                        val contact = arguments.optString("contact_name", "").trim()
+                        val text = arguments.optString("message", "").trim()
+                        if (contact.isNotBlank() && text.isNotBlank()) {
+                            AIAction.SendWhatsApp(contact, text)
+                        } else if (contact.isBlank()) {
+                            AIAction.Clarify("Who should I send the WhatsApp message to?")
+                        } else {
+                            AIAction.Clarify("What message should I send to $contact?")
+                        }
                     }
                     "play_youtube" -> {
-                        val query = arguments.optString("query", "")
-                        AIAction.PlayYouTube(query)
+                        val query = arguments.optString("query", "").trim()
+                        if (query.isNotBlank()) AIAction.PlayYouTube(query) else AIAction.Clarify("What would you like to play on YouTube?")
                     }
                     "order_food" -> {
-                        val item = arguments.optString("item", "")
-                        val restaurant = if (arguments.has("restaurant") && !arguments.isNull("restaurant")) arguments.getString("restaurant") else null
-                        AIAction.OrderFood(item, restaurant)
+                        val item = arguments.optString("item", "").trim()
+                        val restaurant = arguments.optString("restaurant", "").trim().ifBlank { null }
+                        if (item.isNotBlank()) AIAction.OrderFood(item, restaurant) else AIAction.Clarify("What food would you like to order?")
                     }
                     "device_control" -> {
-                        val command = arguments.optString("command", "HOME")
+                        val command = arguments.optString("command", "HOME").uppercase()
                         val speech = arguments.optString("speech", "Done")
                         AIAction.DeviceControl(command, speech)
                     }
@@ -183,11 +237,14 @@ class OpenAiProvider(private val client: OkHttpClient) {
                         val question = arguments.optString("question", "Could you clarify that?")
                         AIAction.Clarify(question)
                     }
-                    else -> AIAction.Answer("Action not supported.")
+                    else -> {
+                        Log.w("OpenAiProvider", "Unknown tool name: $functionName")
+                        AIAction.Answer("Action not supported.")
+                    }
                 }
             }
 
-            // Fallback to direct conversational response
+            // Direct text response
             val content = message.optString("content", "")
             return if (content.isNotBlank()) {
                 AIAction.Answer(content.trim())
@@ -195,5 +252,20 @@ class OpenAiProvider(private val client: OkHttpClient) {
                 AIAction.Answer("Done!")
             }
         }
+    }
+
+    private suspend fun Call.await(): Response = suspendCancellableCoroutine { continuation ->
+        continuation.invokeOnCancellation {
+            cancel()
+        }
+        enqueue(object : Callback {
+            override fun onResponse(call: Call, response: Response) {
+                continuation.resume(response)
+            }
+            override fun onFailure(call: Call, e: IOException) {
+                if (continuation.isCancelled) return
+                continuation.resumeWithException(e)
+            }
+        })
     }
 }

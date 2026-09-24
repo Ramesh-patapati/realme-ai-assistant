@@ -2,12 +2,19 @@ package com.assistant.voiceagent.service
 
 import android.util.Log
 import com.assistant.voiceagent.model.AIAction
+import kotlinx.coroutines.suspendCancellableCoroutine
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 class GeminiProvider(private val client: OkHttpClient) {
 
@@ -31,7 +38,7 @@ class GeminiProvider(private val client: OkHttpClient) {
         - If general question: {"action": "ANSWER", "speech": "<Short spoken answer>"}
     """.trimIndent()
 
-    fun callGeminiWithFallback(userInput: String, apiKey: String): AIAction {
+    suspend fun callGeminiWithFallback(userInput: String, apiKey: String): AIAction {
         var lastError: Exception? = null
         for (model in geminiModels) {
             try {
@@ -45,7 +52,7 @@ class GeminiProvider(private val client: OkHttpClient) {
         return AIAction.Answer("Connection was slow. Could you repeat that?")
     }
 
-    private fun callGemini(userInput: String, apiKey: String, model: String): AIAction {
+    private suspend fun callGemini(userInput: String, apiKey: String, model: String): AIAction {
         val payload = JSONObject().apply {
             put("contents", JSONArray().apply {
                 put(JSONObject().apply {
@@ -85,14 +92,15 @@ class GeminiProvider(private val client: OkHttpClient) {
             .post(payload.toString().toRequestBody("application/json".toMediaType()))
             .build()
 
-        client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                val errorBody = response.body?.string() ?: ""
-                Log.e("GeminiProvider", "Gemini HTTP ${response.code} error: $errorBody")
-                throw RuntimeException("Gemini HTTP ${response.code}: $errorBody")
+        val response = client.newCall(request).await()
+        response.use { resp ->
+            if (!resp.isSuccessful) {
+                val errorBody = resp.body?.string() ?: ""
+                Log.e("GeminiProvider", "Gemini HTTP ${resp.code} error: $errorBody")
+                throw RuntimeException("Gemini HTTP ${resp.code}: $errorBody")
             }
 
-            val body = response.body?.string() ?: throw RuntimeException("Empty response")
+            val body = resp.body?.string() ?: throw RuntimeException("Empty response")
             val json = JSONObject(body)
             val candidates = json.optJSONArray("candidates") ?: throw RuntimeException("No candidates in response")
             if (candidates.length() == 0) throw RuntimeException("Empty candidates list")
@@ -126,12 +134,12 @@ class GeminiProvider(private val client: OkHttpClient) {
                 }
                 "YOUTUBE" -> {
                     val query = obj.optString("query", "").trim()
-                    AIAction.PlayYouTube(query)
+                    if (query.isNotBlank()) AIAction.PlayYouTube(query) else AIAction.Clarify("What would you like to play on YouTube?")
                 }
                 "ZOMATO" -> {
                     val item = obj.optString("item", "").trim()
                     val restaurant = if (obj.has("restaurant") && !obj.isNull("restaurant")) obj.getString("restaurant") else null
-                    AIAction.OrderFood(item, restaurant)
+                    if (item.isNotBlank()) AIAction.OrderFood(item, restaurant) else AIAction.Clarify("What would you like to order?")
                 }
                 "DEVICE_CONTROL" -> {
                     val command = obj.optString("command", "HOME").uppercase()
@@ -152,5 +160,20 @@ class GeminiProvider(private val client: OkHttpClient) {
             Log.e("GeminiProvider", "Error parsing JSON response: $rawText", e)
             return AIAction.Answer(rawText)
         }
+    }
+
+    private suspend fun Call.await(): Response = suspendCancellableCoroutine { continuation ->
+        continuation.invokeOnCancellation {
+            cancel()
+        }
+        enqueue(object : Callback {
+            override fun onResponse(call: Call, response: Response) {
+                continuation.resume(response)
+            }
+            override fun onFailure(call: Call, e: IOException) {
+                if (continuation.isCancelled) return
+                continuation.resumeWithException(e)
+            }
+        })
     }
 }

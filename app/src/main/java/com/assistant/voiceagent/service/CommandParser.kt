@@ -7,8 +7,8 @@ object CommandParser {
     private val STOP_WORDS = setOf("stop", "close", "bye", "goodbye", "cancel", "never mind", "quit", "exit", "shut up")
 
     /**
-     * Fast local deterministic parser for standard phone commands.
-     * Returns null if the command requires AI reasoning.
+     * Strict deterministic local parser for standard phone commands.
+     * Returns null if the command requires AI reasoning or doesn't match an exact action pattern.
      */
     fun parseDeterministic(userInput: String): AIAction? {
         val clean = userInput.trim().lowercase()
@@ -16,7 +16,7 @@ object CommandParser {
             return AIAction.Stop
         }
 
-        // Navigation & System Controls
+        // Exact Navigation & System Controls
         when (clean) {
             "go home", "home", "home screen", "open home" -> return AIAction.DeviceControl("HOME", "Going to home screen")
             "go back", "back" -> return AIAction.DeviceControl("BACK", "Going back")
@@ -27,11 +27,10 @@ object CommandParser {
             "scroll up" -> return AIAction.DeviceControl("SCROLL_UP", "Scrolling up")
         }
 
-        // YouTube Playback
-        if (clean.startsWith("play ") || (clean.contains("youtube") && !clean.contains("what is") && !clean.contains("how to"))) {
+        // Strict YouTube Playback Matching (e.g. "play believer", "play despacito on youtube")
+        if (clean.startsWith("play ") && !clean.contains("game") && !clean.contains("cricket") && !clean.contains("football")) {
             val query = clean
                 .removePrefix("play ")
-                .removePrefix("search ")
                 .replace(" on youtube", "")
                 .replace(" in youtube", "")
                 .replace(" youtube", "")
@@ -41,23 +40,33 @@ object CommandParser {
             }
         }
 
-        // Phone Calls with argument validation
-        if (clean.startsWith("call ") || clean.startsWith("dial ") || clean.startsWith("phone ")) {
+        if (clean.startsWith("search ") && (clean.endsWith(" on youtube") || clean.endsWith(" in youtube"))) {
+            val query = clean
+                .removePrefix("search ")
+                .replace(" on youtube", "")
+                .replace(" in youtube", "")
+                .trim()
+            if (query.isNotBlank()) {
+                return AIAction.PlayYouTube(query)
+            }
+        }
+
+        // Phone Calls with argument extraction and validation
+        if (clean.startsWith("call ") || clean.startsWith("dial ")) {
             val contact = clean
                 .removePrefix("call ")
                 .removePrefix("dial ")
-                .removePrefix("phone ")
                 .removePrefix("to ")
                 .trim()
             if (contact.isNotBlank()) {
-                return AIAction.Call(contact.replaceFirstChar { it.uppercase() })
+                return AIAction.Call(contact.split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } })
             } else {
                 return AIAction.Clarify("Who would you like me to call?")
             }
         }
 
         // Food Ordering
-        if (clean.startsWith("order ") || clean.contains("on zomato") || clean.contains("from zomato")) {
+        if (clean.startsWith("order ") && (clean.contains("food") || clean.contains("pizza") || clean.contains("burger") || clean.contains("biryani") || clean.contains("zomato"))) {
             val item = clean
                 .removePrefix("order ")
                 .replace(" on zomato", "")
