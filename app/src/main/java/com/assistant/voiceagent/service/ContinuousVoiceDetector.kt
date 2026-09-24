@@ -105,11 +105,33 @@ class ContinuousVoiceDetector(
     }
 
     fun pause() {
-        isPaused = true
+        if (!isPaused) {
+            isPaused = true
+            try {
+                if (audioRecord?.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
+                    audioRecord?.stop()
+                    Log.d("VoiceDetector", "AudioRecord paused and stopped hardware stream")
+                }
+            } catch (e: Exception) {
+                Log.w("VoiceDetector", "Error pausing AudioRecord", e)
+            }
+        }
     }
 
     fun resume() {
-        isPaused = false
+        if (isPaused && isRecording) {
+            try {
+                if (audioRecord?.state == AudioRecord.STATE_INITIALIZED &&
+                    audioRecord?.recordingState != AudioRecord.RECORDSTATE_RECORDING
+                ) {
+                    audioRecord?.startRecording()
+                    Log.d("VoiceDetector", "AudioRecord resumed and started hardware stream")
+                }
+            } catch (e: Exception) {
+                Log.w("VoiceDetector", "Error resuming AudioRecord", e)
+            }
+            isPaused = false
+        }
     }
 
     fun stop() {

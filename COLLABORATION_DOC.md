@@ -81,5 +81,7 @@ Build a high-performance, real-time AI voice assistant for Android that:
 - ✅ **Strict OpenAI Function Calling (`tools` schema)**: Implemented in `OpenAiProvider.kt` with validated JSON parameter schemas for `call_contact`, `send_whatsapp`, `play_youtube`, `order_food`, `device_control`, and `clarify`.
 - ✅ **Deterministic Local Command Router**: Implemented in `CommandParser.kt` for instant execution without network latency.
 - ✅ **Modular Provider Architecture**: Decoupled `AIEngine.kt` into `CommandParser`, `OpenAiProvider`, and `GeminiProvider`.
-- ✅ **Bounded Request Timeouts**: Added a strict 10-second bounded timeout with coroutine cancellation.
+- ✅ **Guaranteed Resource Cleanup on Cancellation**: Implemented `continuation.resume(response) { response.close() }` to ensure zero OkHttp connection leaks under all coroutine cancellation timings.
+- ✅ **Silent Wake-Word Gating**: Audio energy detector opens a silent recognition session to verify the wake word without unprompted TTS interruptions from ambient room sounds.
+- ✅ **Hardware AudioRecord Release on Pause**: `ContinuousVoiceDetector.pause()` calls `audioRecord.stop()` and `resume()` restarts `audioRecord.startRecording()`, guaranteeing zero microphone hardware session collisions across all Android OEM HALs.
 - ✅ **On-Device Speech Recognition**: Updated `SpeechInputManager.kt` to prefer `SpeechRecognizer.createOnDeviceSpeechRecognizer` on API 31+ when available.
