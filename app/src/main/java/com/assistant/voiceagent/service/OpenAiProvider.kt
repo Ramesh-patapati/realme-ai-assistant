@@ -260,11 +260,9 @@ class OpenAiProvider(private val client: OkHttpClient) {
         }
         enqueue(object : Callback {
             override fun onResponse(call: Call, response: Response) {
-                if (continuation.isCancelled) {
+                continuation.resume(response) {
                     response.close()
-                    return
                 }
-                continuation.resume(response)
             }
             override fun onFailure(call: Call, e: IOException) {
                 if (continuation.isCancelled) return
