@@ -64,30 +64,24 @@ object CommandParser {
             }
         }
 
-        // 4. Phone Calls with argument extraction
-        if (clean.startsWith("call ") || clean.startsWith("dial ")) {
-            val contact = clean
-                .removePrefix("call ")
-                .removePrefix("dial ")
-                .removePrefix("to ")
-                .trim()
-            if (contact.isNotBlank()) {
-                return AIAction.Call(contact.split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } })
+        // 4. Phone Calls with flexible natural phrasing (e.g. "make a call to Naveen", "call Naveen", "dial 9876543210")
+        val callRegex = Regex("^(call|dial|phone|ring|make a call to|make a phone call to|place a call to)\\s+(.+)$")
+        val callMatch = callRegex.find(clean)
+        if (callMatch != null) {
+            val rawContact = callMatch.groupValues[2].removePrefix("to ").trim()
+            if (rawContact.isNotBlank()) {
+                val formattedContact = rawContact.split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
+                return AIAction.Call(formattedContact)
             } else {
                 return AIAction.Clarify("Who would you like me to call?")
             }
         }
 
         // 5. WhatsApp Message Parsing (e.g. "send message to Naveen saying hello", "whatsapp Naveen hi")
-        if (clean.startsWith("whatsapp ") || clean.startsWith("send whatsapp to ") || clean.startsWith("message ") || clean.startsWith("send message to ")) {
-            var remainder = clean
-                .removePrefix("send whatsapp to ")
-                .removePrefix("whatsapp ")
-                .removePrefix("send message to ")
-                .removePrefix("message ")
-                .trim()
-
-            // Check for "saying", "that", "message", or colon
+        val whatsappRegex = Regex("^(send whatsapp to|whatsapp to|whatsapp|send message to|send a message to|send text to|message to|message|text to|text)\\s+(.+)$")
+        val waMatch = whatsappRegex.find(clean)
+        if (waMatch != null) {
+            val remainder = waMatch.groupValues[2].trim()
             val parts = remainder.split(Regex(" (saying|that|message|msg|text) |: "))
             if (parts.size >= 2) {
                 val contact = parts[0].trim().split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
@@ -96,12 +90,14 @@ object CommandParser {
                     return AIAction.SendWhatsApp(contact, message)
                 }
             } else {
-                // Check "to <name> <message>" or "<name> <message>"
                 val words = remainder.split(" ")
                 if (words.size >= 2) {
                     val contact = words[0].replaceFirstChar { it.uppercase() }
                     val message = words.subList(1, words.size).joinToString(" ")
                     return AIAction.SendWhatsApp(contact, message)
+                } else if (words.isNotEmpty()) {
+                    val contact = words[0].replaceFirstChar { it.uppercase() }
+                    return AIAction.SendWhatsApp(contact, "Hello")
                 }
             }
         }
