@@ -124,38 +124,14 @@ class LockScreenVoiceService : Service() {
     private fun onVoiceActivityDetected() {
         if (!isServiceRunning || isBusy) return
         isBusy = true
-        Log.d("VoiceService", "Voice detected by AudioRecord. Launching recognition session...")
+        Log.d("VoiceService", "Voice activity detected by AudioRecord! Prompting user...")
+        voiceDetector.pause()
 
-        val prefs = getSharedPreferences("ai_assistant_prefs", Context.MODE_PRIVATE)
-        val customWakeWord = prefs.getString("custom_wake_word", "hey jarvis") ?: "hey jarvis"
-
-        speechInputManager.startRecognitionSession(
-            onResult = { recognizedText ->
-                Log.d("VoiceService", "Voice transcribed: '$recognizedText'")
-                val (wakeDetected, command) = extractWakeWordAndCommand(recognizedText, customWakeWord)
-                if (wakeDetected) {
-                    if (command.isNotBlank()) {
-                        Log.d("VoiceService", "Wake phrase + command in one sentence: '$command'")
-                        processUserSpokenCommand(command)
-                    } else {
-                        Log.d("VoiceService", "Wake phrase detected! Prompting...")
-                        ttsManager.speak("Yes, I'm listening!") {
-                            mainHandler.postDelayed({
-                                listenForActiveCommand()
-                            }, 350L)
-                        }
-                    }
-                } else {
-                    // Ambient speech that didn't match wake word -> silently resume
-                    Log.d("VoiceService", "Speech did not contain wake word. Resuming detector.")
-                    resumeBackgroundListening()
-                }
-            },
-            onError = { errorCode, errorMessage ->
-                Log.d("VoiceService", "Recognition ended ($errorCode: $errorMessage). Resuming detector.")
-                resumeBackgroundListening()
-            }
-        )
+        ttsManager.speak("Yes, I'm listening!") {
+            mainHandler.postDelayed({
+                listenForActiveCommand()
+            }, 300L)
+        }
     }
 
     fun triggerVoiceInteraction(customPrompt: String = "How can I help you?") {
