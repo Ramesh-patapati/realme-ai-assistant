@@ -79,6 +79,8 @@
             android:foregroundServiceType="microphone|mediaPlayback">
             <intent-filter>
                 <action android:name="com.assistant.voiceagent.TRIGGER_VOICE" />
+                <action android:name="com.assistant.voiceagent.RESTART_LISTENING" />
+                <action android:name="com.assistant.voiceagent.TEST_COMMAND" />
             </intent-filter>
         </service>
 

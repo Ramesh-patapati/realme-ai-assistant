@@ -8,8 +8,11 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.os.PowerManager
+import android.speech.SpeechRecognizer
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.assistant.voiceagent.model.AIAction
@@ -29,14 +32,21 @@ class LockScreenVoiceService : Service() {
     private lateinit var phoneActionsManager: PhoneActionsManager
     private var wakeLock: PowerManager.WakeLock? = null
 
+    private var isListeningForActiveCommand = false
+    private val restartHandler = Handler(Looper.getMainLooper())
+    private var restartRunnable: Runnable? = null
+    private var isServiceRunning = false
+
     companion object {
         const val CHANNEL_ID = "ai_assistant_foreground_channel"
         const val NOTIFICATION_ID = 1001
         const val ACTION_TRIGGER_VOICE_COMMAND = "com.assistant.voiceagent.TRIGGER_VOICE"
+        const val ACTION_RESTART_LISTENING = "com.assistant.voiceagent.RESTART_LISTENING"
     }
 
     override fun onCreate() {
         super.onCreate()
+        isServiceRunning = true
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildForegroundNotification())
 
@@ -49,6 +59,7 @@ class LockScreenVoiceService : Service() {
         phoneActionsManager = PhoneActionsManager(this)
 
         Log.d("VoiceService", "LockScreenVoiceService initialized")
+        startContinuousWakeListening()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -57,32 +68,123 @@ class LockScreenVoiceService : Service() {
             ACTION_TRIGGER_VOICE_COMMAND -> {
                 triggerVoiceInteraction()
             }
+            ACTION_RESTART_LISTENING -> {
+                Log.d("VoiceService", "Restarting continuous listening with updated wake phrase")
+                startContinuousWakeListening()
+            }
             "com.assistant.voiceagent.TEST_COMMAND" -> {
                 val command = intent.getStringExtra("command") ?: "What is the capital of India?"
                 Log.d("VoiceService", "Executing direct test command: $command")
                 wakeLock?.acquire(15000L)
                 processUserSpokenCommand(command)
             }
+            else -> {
+                startContinuousWakeListening()
+            }
         }
         return START_STICKY
     }
 
+    private fun extractWakeWordAndCommand(speech: String, customWakeWord: String): Pair<Boolean, String> {
+        val cleanSpeech = speech.lowercase().trim()
+        val wakeWords = mutableListOf<String>()
+        val cleanCustom = customWakeWord.lowercase().trim()
+        if (cleanCustom.isNotBlank() && cleanCustom != "hey assistant") {
+            wakeWords.add(cleanCustom)
+        }
+        wakeWords.addAll(listOf("hey assistant", "ok assistant", "hello assistant", "hey siri", "hello siri", "siripulse", "assistant"))
+
+        for (wake in wakeWords) {
+            if (cleanSpeech == wake) {
+                return Pair(true, "")
+            }
+            if (cleanSpeech.startsWith("$wake ")) {
+                val command = cleanSpeech.removePrefix("$wake ").trim()
+                return Pair(true, command)
+            }
+            if (cleanSpeech.startsWith(wake)) {
+                val remainder = cleanSpeech.removePrefix(wake).trim(' ', ',', '.', '!', '?')
+                return Pair(true, remainder)
+            }
+        }
+        return Pair(false, "")
+    }
+
+    fun startContinuousWakeListening() {
+        if (!isServiceRunning) return
+        isListeningForActiveCommand = false
+        restartRunnable?.let { restartHandler.removeCallbacks(it) }
+
+        val prefs = getSharedPreferences("ai_assistant_prefs", Context.MODE_PRIVATE)
+        val customWakeWord = prefs.getString("custom_wake_word", "hey assistant") ?: "hey assistant"
+        Log.d("VoiceService", "startContinuousWakeListening: active wake phrase is '$customWakeWord'")
+
+        speechInputManager.startListening(
+            onResult = { recognizedText ->
+                Log.d("VoiceService", "Continuous listening heard: '$recognizedText'")
+                val (wakeDetected, command) = extractWakeWordAndCommand(recognizedText, customWakeWord)
+                if (wakeDetected) {
+                    wakeLock?.acquire(25000L)
+                    if (command.isNotBlank()) {
+                        Log.d("VoiceService", "Wake phrase + command in one breath: '$command'")
+                        processUserSpokenCommand(command)
+                    } else {
+                        Log.d("VoiceService", "Wake phrase detected! Prompting...")
+                        speechInputManager.destroyRecognizer()
+                        ttsManager.speak("Yes, I'm listening!") {
+                            listenForActiveCommand()
+                        }
+                    }
+                } else {
+                    // Ambient speech that didn't match wake word -> seamlessly resume listening
+                    restartContinuousListening(300L)
+                }
+            },
+            onError = { errorCode, errorMessage ->
+                // Silent timeouts and no-match during quiet periods
+                Log.d("VoiceService", "Continuous listening ended ($errorCode: $errorMessage). Rescheduling loop.")
+                val delay = if (errorCode == SpeechRecognizer.ERROR_RECOGNIZER_BUSY) 1000L else 400L
+                restartContinuousListening(delay)
+            }
+        )
+    }
+
+    private fun restartContinuousListening(delayMs: Long) {
+        if (!isServiceRunning || isListeningForActiveCommand) return
+        restartRunnable?.let { restartHandler.removeCallbacks(it) }
+        restartRunnable = Runnable {
+            if (isServiceRunning && !isListeningForActiveCommand) {
+                startContinuousWakeListening()
+            }
+        }
+        restartHandler.postDelayed(restartRunnable!!, delayMs)
+    }
+
     fun triggerVoiceInteraction(customPrompt: String = "How can I help you?") {
-        wakeLock?.acquire(15000L)
+        wakeLock?.acquire(20000L)
+        speechInputManager.destroyRecognizer()
         ttsManager.speak(customPrompt) {
-            startListeningLoop()
+            listenForActiveCommand()
         }
     }
 
-    private fun startListeningLoop() {
+    fun listenForActiveCommand() {
+        if (!isServiceRunning) return
+        isListeningForActiveCommand = true
+        restartRunnable?.let { restartHandler.removeCallbacks(it) }
+
         speechInputManager.startListening(
             onResult = { recognizedText ->
+                isListeningForActiveCommand = false
+                Log.d("VoiceService", "Active command heard: '$recognizedText'")
                 processUserSpokenCommand(recognizedText)
             },
-            onError = { error ->
-                Log.w("VoiceService", "Voice recognition ended: $error")
-                ttsManager.speak("I didn't hear anything, so I'm going to sleep now.") {
+            onError = { errorCode, errorMessage ->
+                isListeningForActiveCommand = false
+                Log.w("VoiceService", "Active command error ($errorCode: $errorMessage)")
+                ttsManager.speak("I didn't catch that, going back to standby.") {
                     releaseWakeLock()
+                    restartContinuousListening(600L)
                 }
             }
         )
@@ -102,18 +204,30 @@ class LockScreenVoiceService : Service() {
         }
     }
 
+    private fun speakAndResume(text: String, onFinished: (() -> Unit)? = null) {
+        speechInputManager.destroyRecognizer()
+        wakeLock?.acquire(20000L)
+        ttsManager.speak(text) {
+            try {
+                onFinished?.invoke()
+            } finally {
+                releaseWakeLock()
+                restartContinuousListening(500L)
+            }
+        }
+    }
+
     private fun handleAIAction(action: AIAction) {
         Log.d("VoiceService", "Executing handleAIAction: $action")
         when (action) {
             is AIAction.Stop -> {
-                ttsManager.speak("Stopping now. Let me know when you need me!") {
-                    releaseWakeLock()
-                }
+                speakAndResume("Stopping now. Let me know when you need me!")
             }
 
             is AIAction.Clarify -> {
+                speechInputManager.destroyRecognizer()
                 ttsManager.speak(action.question) {
-                    startListeningLoop()
+                    listenForActiveCommand()
                 }
             }
 
@@ -121,21 +235,15 @@ class LockScreenVoiceService : Service() {
                 val result = phoneActionsManager.makeCall(action.contactName)
                 when (result) {
                     is PhoneActionsManager.ActionResult.Success -> {
-                        ttsManager.speak("Calling ${action.contactName}") {
-                            releaseWakeLock()
-                        }
+                        speakAndResume("Calling ${action.contactName}")
                     }
                     is PhoneActionsManager.ActionResult.PermissionNeeded -> {
-                        // Openly speak about missing permission and open the settings!
-                        ttsManager.speak(result.spokenExplanation) {
+                        speakAndResume(result.spokenExplanation) {
                             startActivity(result.settingsIntent)
-                            releaseWakeLock()
                         }
                     }
                     is PhoneActionsManager.ActionResult.Failure -> {
-                        ttsManager.speak(result.reason) {
-                            releaseWakeLock()
-                        }
+                        speakAndResume(result.reason)
                     }
                 }
             }
@@ -144,55 +252,42 @@ class LockScreenVoiceService : Service() {
                 val result = phoneActionsManager.executeDeviceControl(action.command)
                 when (result) {
                     is PhoneActionsManager.ActionResult.Success -> {
-                        ttsManager.speak(action.speech) {
-                            releaseWakeLock()
-                        }
+                        speakAndResume(action.speech)
                     }
                     is PhoneActionsManager.ActionResult.PermissionNeeded -> {
-                        ttsManager.speak(result.spokenExplanation) {
+                        speakAndResume(result.spokenExplanation) {
                             startActivity(result.settingsIntent)
-                            releaseWakeLock()
                         }
                     }
                     is PhoneActionsManager.ActionResult.Failure -> {
-                        ttsManager.speak("Could not perform that action.") {
-                            releaseWakeLock()
-                        }
+                        speakAndResume("Could not perform that action.")
                     }
                 }
             }
 
             is AIAction.PlayYouTube -> {
-                ttsManager.speak("Playing ${action.songOrQuery} on YouTube") {
+                speakAndResume("Playing ${action.songOrQuery} on YouTube") {
                     phoneActionsManager.playYouTube(action.songOrQuery)
-                    releaseWakeLock()
                 }
             }
 
             is AIAction.OrderFood -> {
                 val restaurantText = if (action.restaurant != null) " from ${action.restaurant}" else ""
-                ttsManager.speak("Opening Zomato for ${action.item}$restaurantText") {
+                speakAndResume("Opening Zomato for ${action.item}$restaurantText") {
                     phoneActionsManager.openZomato(action.item, action.restaurant)
-                    releaseWakeLock()
                 }
             }
 
             is AIAction.SendWhatsApp -> {
-                ttsManager.speak("Sending message to ${action.contactName}") {
-                    releaseWakeLock()
-                }
+                speakAndResume("Sending message to ${action.contactName}")
             }
 
             is AIAction.Answer -> {
-                ttsManager.speak(action.replyText) {
-                    releaseWakeLock()
-                }
+                speakAndResume(action.replyText)
             }
 
             is AIAction.Unknown -> {
-                ttsManager.speak(action.rawText) {
-                    releaseWakeLock()
-                }
+                speakAndResume(action.rawText)
             }
         }
     }
@@ -250,6 +345,8 @@ class LockScreenVoiceService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        isServiceRunning = false
+        restartRunnable?.let { restartHandler.removeCallbacks(it) }
         releaseWakeLock()
         serviceScope.cancel()
         ttsManager.shutdown()
