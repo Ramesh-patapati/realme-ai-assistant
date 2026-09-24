@@ -114,7 +114,7 @@ class AIEngine(private val context: Context) {
             put("contents", contents)
             put("generationConfig", JSONObject().apply {
                 put("temperature", 0.1)
-                put("maxOutputTokens", 120)
+                put("maxOutputTokens", 800)
                 put("responseMimeType", "application/json")
             })
         }
@@ -150,7 +150,7 @@ class AIEngine(private val context: Context) {
 
         val jsonBody = JSONObject().apply {
             put("model", "gpt-4o-mini")
-            put("max_tokens", 120)
+            put("max_tokens", 800)
             put("temperature", 0.2)
             put("response_format", JSONObject().put("type", "json_object"))
             val messages = JSONArray().apply {
