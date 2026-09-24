@@ -42,7 +42,12 @@ class SpeechInputManager(private val context: Context) {
             val currentGeneration = ++listenerGeneration
 
             try {
-                speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
+                speechRecognizer = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S && SpeechRecognizer.isOnDeviceRecognitionAvailable(context)) {
+                    Log.d("SpeechInput", "Using On-Device SpeechRecognizer")
+                    SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
+                } else {
+                    SpeechRecognizer.createSpeechRecognizer(context)
+                }.apply {
                     setRecognitionListener(object : RecognitionListener {
                         override fun onReadyForSpeech(params: Bundle?) {
                             if (currentGeneration != listenerGeneration) return
