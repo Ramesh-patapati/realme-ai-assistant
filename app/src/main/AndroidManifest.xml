@@ -75,8 +75,12 @@
         <service
             android:name=".service.LockScreenVoiceService"
             android:enabled="true"
-            android:exported="false"
-            android:foregroundServiceType="microphone|mediaPlayback" />
+            android:exported="true"
+            android:foregroundServiceType="microphone|mediaPlayback">
+            <intent-filter>
+                <action android:name="com.assistant.voiceagent.TRIGGER_VOICE" />
+            </intent-filter>
+        </service>
 
         <!-- Receiver for Bluetooth / Headset Media Button Clicks -->
         <receiver
