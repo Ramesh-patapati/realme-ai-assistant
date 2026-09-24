@@ -12,7 +12,6 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
-import android.speech.SpeechRecognizer
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.assistant.voiceagent.model.AIAction
@@ -28,25 +27,20 @@ class LockScreenVoiceService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private lateinit var ttsManager: TtsManager
     private lateinit var speechInputManager: SpeechInputManager
+    private lateinit var voiceDetector: ContinuousVoiceDetector
     private lateinit var aiEngine: AIEngine
     private lateinit var phoneActionsManager: PhoneActionsManager
     private var wakeLock: PowerManager.WakeLock? = null
 
-    private var isListeningForActiveCommand = false
-    private val restartHandler = Handler(Looper.getMainLooper())
-    private var restartRunnable: Runnable? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var isBusy = false
     private var isServiceRunning = false
-
-    // Watchdog: force-restarts listening if nothing happens for 25 seconds
-    private var watchdogRunnable: Runnable? = null
-    private var lastListeningActivity = 0L
 
     companion object {
         const val CHANNEL_ID = "ai_assistant_foreground_channel"
         const val NOTIFICATION_ID = 1001
         const val ACTION_TRIGGER_VOICE_COMMAND = "com.assistant.voiceagent.TRIGGER_VOICE"
         const val ACTION_RESTART_LISTENING = "com.assistant.voiceagent.RESTART_LISTENING"
-        private const val WATCHDOG_INTERVAL_MS = 25_000L
     }
 
     override fun onCreate() {
@@ -68,9 +62,15 @@ class LockScreenVoiceService : Service() {
         aiEngine = AIEngine(this)
         phoneActionsManager = PhoneActionsManager(this)
 
+        // Initialize continuous voice activity detector (AudioRecord based - NO BUZZER / NO CLICKS)
+        voiceDetector = ContinuousVoiceDetector(this) {
+            mainHandler.post {
+                onVoiceActivityDetected()
+            }
+        }
+
         Log.d("VoiceService", "LockScreenVoiceService initialized")
-        startContinuousWakeListening()
-        startWatchdog()
+        voiceDetector.startListening()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -80,8 +80,7 @@ class LockScreenVoiceService : Service() {
                 triggerVoiceInteraction()
             }
             ACTION_RESTART_LISTENING -> {
-                Log.d("VoiceService", "Restarting continuous listening with updated wake phrase")
-                startContinuousWakeListening()
+                resumeBackgroundListening()
             }
             "com.assistant.voiceagent.TEST_COMMAND" -> {
                 val command = intent.getStringExtra("command") ?: "What is the capital of India?"
@@ -89,7 +88,9 @@ class LockScreenVoiceService : Service() {
                 processUserSpokenCommand(command)
             }
             else -> {
-                startContinuousWakeListening()
+                if (!isBusy) {
+                    voiceDetector.resume()
+                }
             }
         }
         return START_STICKY
@@ -99,7 +100,7 @@ class LockScreenVoiceService : Service() {
         val cleanSpeech = speech.lowercase().trim()
         val wakeWords = mutableListOf<String>()
         val cleanCustom = customWakeWord.lowercase().trim()
-        if (cleanCustom.isNotBlank() && cleanCustom != "hey assistant") {
+        if (cleanCustom.isNotBlank() && cleanCustom != "hey jarvis") {
             wakeWords.add(cleanCustom)
         }
         wakeWords.addAll(listOf("hey jarvis", "ok jarvis", "hello jarvis", "jarvis", "hey assistant", "ok assistant", "hello assistant", "hey siri", "hello siri", "siripulse", "assistant"))
@@ -120,116 +121,72 @@ class LockScreenVoiceService : Service() {
         return Pair(false, "")
     }
 
-    fun startContinuousWakeListening() {
-        if (!isServiceRunning || isListeningForActiveCommand) return
-        restartRunnable?.let { restartHandler.removeCallbacks(it) }
-        lastListeningActivity = System.currentTimeMillis()
+    private fun onVoiceActivityDetected() {
+        if (!isServiceRunning || isBusy) return
+        isBusy = true
+        Log.d("VoiceService", "Voice detected by AudioRecord. Launching recognition session...")
 
         val prefs = getSharedPreferences("ai_assistant_prefs", Context.MODE_PRIVATE)
         val customWakeWord = prefs.getString("custom_wake_word", "hey jarvis") ?: "hey jarvis"
-        Log.d("VoiceService", "startContinuousWakeListening: active wake phrase is '$customWakeWord'")
 
-        speechInputManager.startContinuousListening(
+        speechInputManager.startRecognitionSession(
             onResult = { recognizedText ->
-                lastListeningActivity = System.currentTimeMillis()
-                Log.d("VoiceService", "Continuous listening heard: '$recognizedText'")
+                Log.d("VoiceService", "Voice transcribed: '$recognizedText'")
                 val (wakeDetected, command) = extractWakeWordAndCommand(recognizedText, customWakeWord)
                 if (wakeDetected) {
                     if (command.isNotBlank()) {
-                        Log.d("VoiceService", "Wake phrase + command in one breath: '$command'")
+                        Log.d("VoiceService", "Wake phrase + command in one sentence: '$command'")
                         processUserSpokenCommand(command)
                     } else {
                         Log.d("VoiceService", "Wake phrase detected! Prompting...")
-                        speechInputManager.destroyRecognizer()
                         ttsManager.speak("Yes, I'm listening!") {
-                            // Delay slightly after TTS to let audio echo completely fade out before mic turns on
-                            restartHandler.postDelayed({
+                            mainHandler.postDelayed({
                                 listenForActiveCommand()
-                            }, 450L)
+                            }, 350L)
                         }
                     }
                 } else {
-                    // Ambient speech that didn't match wake word -> smoothly resume listening
-                    restartContinuousListening(300L)
+                    // Ambient speech that didn't match wake word -> silently resume
+                    Log.d("VoiceService", "Speech did not contain wake word. Resuming detector.")
+                    resumeBackgroundListening()
                 }
             },
             onError = { errorCode, errorMessage ->
-                lastListeningActivity = System.currentTimeMillis()
-                Log.d("VoiceService", "Continuous listening ended ($errorCode: $errorMessage). Rescheduling loop.")
-                val delay = when (errorCode) {
-                    SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> 1200L
-                    SpeechRecognizer.ERROR_AUDIO -> 1500L
-                    else -> 400L
-                }
-                restartContinuousListening(delay)
-            },
-            muteBeep = true
+                Log.d("VoiceService", "Recognition ended ($errorCode: $errorMessage). Resuming detector.")
+                resumeBackgroundListening()
+            }
         )
     }
 
-    private fun restartContinuousListening(delayMs: Long) {
-        if (!isServiceRunning || isListeningForActiveCommand) return
-        restartRunnable?.let { restartHandler.removeCallbacks(it) }
-        restartRunnable = Runnable {
-            if (isServiceRunning && !isListeningForActiveCommand) {
-                startContinuousWakeListening()
-            }
-        }
-        restartHandler.postDelayed(restartRunnable!!, delayMs)
-    }
-
-    private fun startWatchdog() {
-        watchdogRunnable = object : Runnable {
-            override fun run() {
-                if (!isServiceRunning) return
-                val elapsed = System.currentTimeMillis() - lastListeningActivity
-                if (elapsed > WATCHDOG_INTERVAL_MS && !isListeningForActiveCommand) {
-                    Log.w("VoiceService", "WATCHDOG: Listening loop idle (${elapsed}ms). Refreshing listening session.")
-                    restartRunnable?.let { restartHandler.removeCallbacks(it) }
-                    speechInputManager.destroyRecognizer()
-                    startContinuousWakeListening()
-                }
-                restartHandler.postDelayed(this, WATCHDOG_INTERVAL_MS)
-            }
-        }
-        restartHandler.postDelayed(watchdogRunnable!!, WATCHDOG_INTERVAL_MS)
-    }
-
     fun triggerVoiceInteraction(customPrompt: String = "How can I help you?") {
+        isBusy = true
+        voiceDetector.pause()
         speechInputManager.destroyRecognizer()
         ttsManager.speak(customPrompt) {
-            restartHandler.postDelayed({
+            mainHandler.postDelayed({
                 listenForActiveCommand()
-            }, 450L)
+            }, 350L)
         }
     }
 
-    fun listenForActiveCommand() {
+    private fun listenForActiveCommand() {
         if (!isServiceRunning) return
-        isListeningForActiveCommand = true
-        lastListeningActivity = System.currentTimeMillis()
-        restartRunnable?.let { restartHandler.removeCallbacks(it) }
+        isBusy = true
 
-        speechInputManager.startContinuousListening(
+        speechInputManager.startRecognitionSession(
             onResult = { recognizedText ->
-                isListeningForActiveCommand = false
-                lastListeningActivity = System.currentTimeMillis()
                 Log.d("VoiceService", "Active command heard: '$recognizedText'")
                 processUserSpokenCommand(recognizedText)
             },
             onError = { errorCode, errorMessage ->
-                isListeningForActiveCommand = false
-                lastListeningActivity = System.currentTimeMillis()
                 Log.w("VoiceService", "Active command error ($errorCode: $errorMessage)")
-                // If it was just quietness/timeout, return to wake word standby without irritating prompt
-                restartContinuousListening(500L)
-            },
-            muteBeep = false // Audible indicator when actively awaiting user command
+                resumeBackgroundListening()
+            }
         )
     }
 
     private fun processUserSpokenCommand(userSpeech: String) {
-        Log.d("VoiceService", "processUserSpokenCommand: received speech '$userSpeech'")
+        Log.d("VoiceService", "processUserSpokenCommand: processing '$userSpeech'")
         val prefs = getSharedPreferences("ai_assistant_prefs", Context.MODE_PRIVATE)
         val geminiKey = prefs.getString("gemini_api_key", "") ?: ""
         val openAiKey = prefs.getString("openai_api_key", "") ?: ""
@@ -248,9 +205,19 @@ class LockScreenVoiceService : Service() {
             try {
                 onFinished?.invoke()
             } finally {
-                restartContinuousListening(500L)
+                resumeBackgroundListening()
             }
         }
+    }
+
+    private fun resumeBackgroundListening() {
+        isBusy = false
+        mainHandler.postDelayed({
+            if (isServiceRunning && !isBusy) {
+                voiceDetector.resume()
+                Log.d("VoiceService", "Background voice detector resumed.")
+            }
+        }, 300L)
     }
 
     private fun handleAIAction(action: AIAction) {
@@ -263,9 +230,9 @@ class LockScreenVoiceService : Service() {
             is AIAction.Clarify -> {
                 speechInputManager.destroyRecognizer()
                 ttsManager.speak(action.question) {
-                    restartHandler.postDelayed({
+                    mainHandler.postDelayed({
                         listenForActiveCommand()
-                    }, 450L)
+                    }, 350L)
                 }
             }
 
@@ -365,7 +332,7 @@ class LockScreenVoiceService : Service() {
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("AI Voice Assistant Active")
-            .setContentText("Listening for lock-screen voice and messages")
+            .setContentText("Listening for 'Hey Jarvis' or lock-screen commands")
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setContentIntent(pendingIntent)
             .addAction(android.R.drawable.ic_btn_speak_now, "Talk Now", triggerPendingIntent)
@@ -378,8 +345,7 @@ class LockScreenVoiceService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         isServiceRunning = false
-        restartRunnable?.let { restartHandler.removeCallbacks(it) }
-        watchdogRunnable?.let { restartHandler.removeCallbacks(it) }
+        voiceDetector.stop()
         if (wakeLock?.isHeld == true) {
             try {
                 wakeLock?.release()
