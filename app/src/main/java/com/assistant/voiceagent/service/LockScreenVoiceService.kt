@@ -97,13 +97,13 @@ class LockScreenVoiceService : Service() {
     }
 
     private fun extractWakeWordAndCommand(speech: String, customWakeWord: String): Pair<Boolean, String> {
-        val cleanSpeech = speech.lowercase().trim()
+        val cleanSpeech = speech.lowercase().trim().replace(Regex("[.,?!]"), "")
         val wakeWords = mutableListOf<String>()
-        val cleanCustom = customWakeWord.lowercase().trim()
+        val cleanCustom = customWakeWord.lowercase().trim().replace(Regex("[.,?!]"), "")
         if (cleanCustom.isNotBlank() && cleanCustom != "hey jarvis") {
             wakeWords.add(cleanCustom)
         }
-        wakeWords.addAll(listOf("hey jarvis", "ok jarvis", "hello jarvis", "jarvis", "hey assistant", "ok assistant", "hello assistant", "hey siri", "hello siri", "siripulse", "assistant"))
+        wakeWords.addAll(listOf("hey jarvis", "ok jarvis", "hello jarvis", "jarvis", "hey assistant", "ok assistant", "hello assistant", "hey siri", "hello siri", "assistant"))
 
         for (wake in wakeWords) {
             if (cleanSpeech == wake) {
@@ -114,7 +114,12 @@ class LockScreenVoiceService : Service() {
                 return Pair(true, command)
             }
             if (cleanSpeech.startsWith(wake)) {
-                val remainder = cleanSpeech.removePrefix(wake).trim(' ', ',', '.', '!', '?')
+                val remainder = cleanSpeech.removePrefix(wake).trim()
+                return Pair(true, remainder)
+            }
+            val idx = cleanSpeech.indexOf(wake)
+            if (idx >= 0) {
+                val remainder = (cleanSpeech.substring(0, idx) + " " + cleanSpeech.substring(idx + wake.length)).trim()
                 return Pair(true, remainder)
             }
         }
@@ -124,14 +129,37 @@ class LockScreenVoiceService : Service() {
     private fun onVoiceActivityDetected() {
         if (!isServiceRunning || isBusy) return
         isBusy = true
-        Log.d("VoiceService", "Voice activity detected by AudioRecord! Prompting user...")
+        Log.d("VoiceService", "Voice activity gate triggered, silently listening for wake word...")
         voiceDetector.pause()
 
-        ttsManager.speak("Yes, I'm listening!") {
-            mainHandler.postDelayed({
-                listenForActiveCommand()
-            }, 300L)
-        }
+        val prefs = getSharedPreferences("ai_assistant_prefs", Context.MODE_PRIVATE)
+        val customWakeWord = prefs.getString("custom_wake_word", "hey jarvis") ?: "hey jarvis"
+
+        speechInputManager.startRecognitionSession(
+            onResult = { recognizedText ->
+                Log.d("VoiceService", "Silent gate heard: '$recognizedText'")
+                val (wakeWordMatched, command) = extractWakeWordAndCommand(recognizedText, customWakeWord)
+                if (wakeWordMatched) {
+                    Log.d("VoiceService", "Wake word matched! Command: '$command'")
+                    if (command.isBlank()) {
+                        ttsManager.speak("Yes, I'm listening!") {
+                            mainHandler.postDelayed({
+                                listenForActiveCommand()
+                            }, 300L)
+                        }
+                    } else {
+                        processUserSpokenCommand(command)
+                    }
+                } else {
+                    Log.d("VoiceService", "No wake word in '$recognizedText', ignoring silently.")
+                    resumeBackgroundListening()
+                }
+            },
+            onError = { errorCode, errorMessage ->
+                Log.d("VoiceService", "Silent gate recognition error ($errorCode: $errorMessage), resuming quietly.")
+                resumeBackgroundListening()
+            }
+        )
     }
 
     fun triggerVoiceInteraction(customPrompt: String = "How can I help you?") {
