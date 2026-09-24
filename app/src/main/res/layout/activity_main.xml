@@ -1,38 +1,88 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/bg_dark"
-    android:padding="16dp">
+    android:fillViewport="true">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical">
+        android:orientation="vertical"
+        android:padding="20dp">
 
-        <!-- Header -->
+        <!-- App Header -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="SiriPulse AI Assistant"
+            android:text="Realme AI Assistant (Jarvis)"
             android:textColor="@color/white"
-            android:textSize="24sp"
+            android:textSize="22sp"
             android:textStyle="bold" />
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
-            android:text="Full Control Voice Agent for Realme 7 Pro"
+            android:text="Lock-screen Voice Control &amp; Auto-Actions"
             android:textColor="@color/text_muted"
             android:textSize="14sp" />
 
-        <!-- Status Card -->
+        <!-- Quick Talk Card -->
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
+            app:cardBackgroundColor="@color/accent_blue"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="4dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="🎙️ Tap to Speak to Jarvis"
+                    android:textColor="@color/white"
+                    android:textSize="18sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="Tap below or simply say 'Hey Jarvis' anytime"
+                    android:textColor="#E0E0FF"
+                    android:textSize="13sp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnQuickTalk"
+                    android:layout_width="match_parent"
+                    android:layout_height="56dp"
+                    android:layout_marginTop="12dp"
+                    android:backgroundTint="@color/white"
+                    android:text="⚡ Talk to Jarvis Now"
+                    android:textColor="@color/accent_blue"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    app:cornerRadius="12dp"
+                    app:icon="@android:drawable/ic_btn_speak_now"
+                    app:iconTint="@color/accent_blue" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Service Status Card -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
             app:cardBackgroundColor="@color/card_bg"
             app:cardCornerRadius="12dp"
             app:cardElevation="0dp">
@@ -42,31 +92,39 @@
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
                 android:padding="16dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Background Voice Service"
+                    android:textColor="@color/white"
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
 
                 <TextView
                     android:id="@+id/tvServiceStatus"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="● Service: Ready to Start"
+                    android:layout_marginTop="4dp"
+                    android:text="● Service: Active &amp; Listening"
                     android:textColor="@color/accent_green"
-                    android:textSize="16sp"
-                    android:textStyle="bold" />
+                    android:textSize="14sp" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnToggleService"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
-                    android:backgroundTint="@color/accent_blue"
-                    android:text="Start Background Assistant" />
+                    android:layout_marginTop="10dp"
+                    android:backgroundTint="@color/card_bg_light"
+                    android:text="Restart Background Service" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- Voice Training & Enrollment Card -->
+        <!-- Voice Wake Phrase & Customization Card -->
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
+            android:layout_marginTop="14dp"
             app:cardBackgroundColor="@color/card_bg"
             app:cardCornerRadius="12dp"
             app:cardElevation="0dp">
@@ -80,7 +138,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="🗣️ Voice Recognition &amp; Enrollment"
+                    android:text="🗣️ Wake Phrase Configuration"
                     android:textColor="@color/white"
                     android:textSize="16sp"
                     android:textStyle="bold" />
@@ -90,27 +148,86 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="6dp"
-                    android:text="Current Wake Phrase: 'Hey Assistant'"
+                    android:text="Active Wake Phrase: 'Hey Jarvis'"
                     android:textColor="@color/accent_green"
-                    android:textSize="14sp"
+                    android:textSize="15sp"
                     android:textStyle="bold" />
 
+                <!-- Quick Presets -->
                 <TextView
-                    android:id="@+id/tvVoiceEnrollStatus"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:text="Tap below to record your voice so the app recognizes you."
+                    android:layout_marginTop="10dp"
+                    android:text="Quick Presets:"
                     android:textColor="@color/text_muted"
-                    android:textSize="13sp" />
+                    android:textSize="12sp" />
 
-                <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnTrainVoice"
+                <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
+                    android:layout_marginTop="6dp"
+                    android:orientation="horizontal">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnPresetJarvis"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="4dp"
+                        android:backgroundTint="@color/accent_blue"
+                        android:text="Hey Jarvis"
+                        android:textSize="12sp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnPresetJarvisShort"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="4dp"
+                        android:backgroundTint="@color/card_bg_light"
+                        android:text="Jarvis"
+                        android:textSize="12sp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnPresetAssistant"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:backgroundTint="@color/card_bg_light"
+                        android:text="Assistant"
+                        android:textSize="12sp" />
+                </LinearLayout>
+
+                <!-- Custom Phrase Input -->
+                <com.google.android.material.textfield.TextInputLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:hint="Or type custom phrase (e.g. Jarvis, Friday)"
+                    app:boxBackgroundColor="@color/card_bg_light"
+                    app:boxCornerRadiusBottomEnd="8dp"
+                    app:boxCornerRadiusBottomStart="8dp"
+                    app:boxCornerRadiusTopEnd="8dp"
+                    app:boxCornerRadiusTopStart="8dp"
+                    app:boxStrokeColor="@color/accent_blue"
+                    app:hintTextColor="@color/text_muted">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/etCustomWakeWord"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="text"
+                        android:text="hey jarvis"
+                        android:textColor="@color/white" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnSaveWakeWord"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
                     android:backgroundTint="@color/accent_blue"
-                    android:text="🎤 Record &amp; Save My Voice Profile" />
+                    android:text="💾 Set &amp; Save Wake Phrase" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
@@ -118,7 +235,7 @@
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
+            android:layout_marginTop="14dp"
             app:cardBackgroundColor="@color/card_bg"
             app:cardCornerRadius="12dp"
             app:cardElevation="0dp">
@@ -141,8 +258,14 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="12dp"
-                    android:hint="Google Gemini API Key"
-                    android:textColorHint="@color/text_muted">
+                    android:hint="Gemini API Key"
+                    app:boxBackgroundColor="@color/card_bg_light"
+                    app:boxCornerRadiusBottomEnd="8dp"
+                    app:boxCornerRadiusBottomStart="8dp"
+                    app:boxCornerRadiusTopEnd="8dp"
+                    app:boxCornerRadiusTopStart="8dp"
+                    app:boxStrokeColor="@color/accent_blue"
+                    app:hintTextColor="@color/text_muted">
 
                     <com.google.android.material.textfield.TextInputEditText
                         android:id="@+id/etGeminiKey"
@@ -155,9 +278,15 @@
                 <com.google.android.material.textfield.TextInputLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:hint="OpenAI API Key (Optional for ChatGPT)"
-                    android:textColorHint="@color/text_muted">
+                    android:layout_marginTop="10dp"
+                    android:hint="OpenAI API Key (Optional)"
+                    app:boxBackgroundColor="@color/card_bg_light"
+                    app:boxCornerRadiusBottomEnd="8dp"
+                    app:boxCornerRadiusBottomStart="8dp"
+                    app:boxCornerRadiusTopEnd="8dp"
+                    app:boxCornerRadiusTopStart="8dp"
+                    app:boxStrokeColor="@color/accent_blue"
+                    app:hintTextColor="@color/text_muted">
 
                     <com.google.android.material.textfield.TextInputEditText
                         android:id="@+id/etOpenAiKey"
@@ -167,11 +296,12 @@
                         android:textColor="@color/white" />
                 </com.google.android.material.textfield.TextInputLayout>
 
+                <!-- Engine Selection -->
                 <RadioGroup
-                    android:id="@+id/rgAiChoice"
+                    android:id="@+id/rgAiEngine"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
+                    android:layout_marginTop="10dp"
                     android:orientation="horizontal">
 
                     <RadioButton
@@ -179,15 +309,15 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:checked="true"
-                        android:text="Gemini (Fast &amp; Free)"
+                        android:text="Google Gemini"
                         android:textColor="@color/white" />
 
                     <RadioButton
                         android:id="@+id/rbChatGpt"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:layout_marginStart="16dp"
-                        android:text="ChatGPT"
+                        android:layout_marginStart="24dp"
+                        android:text="ChatGPT (OpenAI)"
                         android:textColor="@color/white" />
                 </RadioGroup>
 
@@ -196,15 +326,16 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="12dp"
-                    android:text="Save API Configuration" />
+                    android:backgroundTint="@color/accent_blue"
+                    android:text="Save AI Engine Settings" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- Permissions & Realme Settings -->
+        <!-- Permissions & Setup Card -->
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
+            android:layout_marginTop="14dp"
             app:cardBackgroundColor="@color/card_bg"
             app:cardCornerRadius="12dp"
             app:cardElevation="0dp">
@@ -218,75 +349,48 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Permissions Checklist (Realme 7 Pro)"
+                    android:text="Required Permissions &amp; Access"
                     android:textColor="@color/white"
                     android:textSize="16sp"
                     android:textStyle="bold" />
 
                 <com.google.android.material.button.MaterialButton
-                    android:id="@+id/btnNotificationAccess"
-                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp"
-                    android:text="1. Allow WhatsApp/Gmail Access"
-                    android:textColor="@color/white" />
-
-                <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnStandardPerms"
-                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
-                    android:text="2. Allow Microphone &amp; Calls"
-                    android:textColor="@color/white" />
+                    android:backgroundTint="@color/card_bg_light"
+                    android:text="Grant Microphone &amp; Phone Permissions" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnNotificationAccess"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:backgroundTint="@color/card_bg_light"
+                    android:text="Enable Notification Listener (WhatsApp)" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnAccessibility"
-                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:text="3. Allow Total Phone Control (Accessibility)"
-                    android:textColor="@color/white" />
+                    android:layout_marginTop="6dp"
+                    android:backgroundTint="@color/card_bg_light"
+                    android:text="Enable Accessibility (Device Control)" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnBatterySettings"
-                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:text="4. Disable Realme Sleep (Battery)"
-                    android:textColor="@color/white" />
+                    android:layout_marginTop="6dp"
+                    android:backgroundTint="@color/card_bg_light"
+                    android:text="Disable Realme Battery Optimization" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- Live Voice Test Orb -->
-        <LinearLayout
+        <View
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
-            android:gravity="center"
-            android:orientation="vertical">
-
-            <com.google.android.material.floatingactionbutton.FloatingActionButton
-                android:id="@+id/fabMicTest"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:backgroundTint="@color/accent_blue"
-                android:contentDescription="Voice Test"
-                android:src="@android:drawable/ic_btn_speak_now"
-                app:tint="@color/white" />
-
-            <TextView
-                android:id="@+id/tvTestStatus"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:text="Tap mic to test assistant"
-                android:textColor="@color/text_muted"
-                android:textSize="14sp" />
-        </LinearLayout>
+            android:layout_height="32dp" />
 
     </LinearLayout>
 </ScrollView>

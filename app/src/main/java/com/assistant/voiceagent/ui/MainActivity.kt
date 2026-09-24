@@ -4,7 +4,6 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
@@ -14,23 +13,19 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.assistant.voiceagent.databinding.ActivityMainBinding
 import com.assistant.voiceagent.service.LockScreenVoiceService
-import com.assistant.voiceagent.service.SpeechInputManager
-import com.assistant.voiceagent.service.TtsManager
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
-    private lateinit var ttsManager: TtsManager
-    private lateinit var speechInputManager: SpeechInputManager
 
     private val requestPermissionsLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         val allGranted = permissions.entries.all { it.value }
         if (allGranted) {
-            Toast.makeText(this, "Standard permissions granted!", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "All permissions granted!", Toast.LENGTH_SHORT).show()
         } else {
-            Toast.makeText(this, "Permissions needed for voice and calls", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Permissions needed for voice and phone actions", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -38,9 +33,6 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
-
-        ttsManager = TtsManager(this)
-        speechInputManager = SpeechInputManager(this)
 
         loadSavedSettings()
         setupListeners()
@@ -58,19 +50,67 @@ class MainActivity : AppCompatActivity() {
             binding.rbGemini.isChecked = true
         }
 
-        val customWakeWord = prefs.getString("custom_wake_word", "Hey Assistant") ?: "Hey Assistant"
-        binding.tvCurrentWakeWord.text = "Current Wake Phrase: '$customWakeWord'"
+        val customWakeWord = prefs.getString("custom_wake_word", "hey jarvis") ?: "hey jarvis"
+        binding.tvCurrentWakeWord.text = "Active Wake Phrase: '$customWakeWord'"
+        binding.etCustomWakeWord.setText(customWakeWord)
+    }
 
-        val isEnrolled = prefs.getBoolean("voice_enrolled", false)
-        if (isEnrolled) {
-            binding.tvVoiceEnrollStatus.text = "✅ Voice recognized & saved for: '$customWakeWord'. Assistant actively follows you!"
+    private fun saveWakeWord(wakeWord: String) {
+        val clean = wakeWord.trim().lowercase()
+        getSharedPreferences("ai_assistant_prefs", Context.MODE_PRIVATE).edit().apply {
+            putString("custom_wake_word", clean)
+            putBoolean("voice_enrolled", true)
+            apply()
+        }
+        binding.tvCurrentWakeWord.text = "Active Wake Phrase: '$clean'"
+        binding.etCustomWakeWord.setText(clean)
+        Toast.makeText(this, "Wake phrase saved: '$clean'", Toast.LENGTH_SHORT).show()
+
+        // Notify background service to update phrase
+        val restartIntent = Intent(this, LockScreenVoiceService::class.java).apply {
+            action = LockScreenVoiceService.ACTION_RESTART_LISTENING
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(restartIntent)
         } else {
-            binding.tvVoiceEnrollStatus.text = "Tap below to record your voice so the app recognizes you."
+            startService(restartIntent)
         }
     }
 
     private fun setupListeners() {
-        // Save API Keys
+        // Quick Talk to Jarvis Button
+        binding.btnQuickTalk.setOnClickListener {
+            val triggerIntent = Intent(this, LockScreenVoiceService::class.java).apply {
+                action = LockScreenVoiceService.ACTION_TRIGGER_VOICE_COMMAND
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(triggerIntent)
+            } else {
+                startService(triggerIntent)
+            }
+            Toast.makeText(this, "Listening for your command...", Toast.LENGTH_SHORT).show()
+        }
+
+        // Preset Wake Word Buttons
+        binding.btnPresetJarvis.setOnClickListener {
+            saveWakeWord("hey jarvis")
+        }
+
+        binding.btnPresetJarvisShort.setOnClickListener {
+            saveWakeWord("jarvis")
+        }
+
+        binding.btnPresetAssistant.setOnClickListener {
+            saveWakeWord("hey assistant")
+        }
+
+        // Custom Wake Word Save
+        binding.btnSaveWakeWord.setOnClickListener {
+            val text = binding.etCustomWakeWord.text?.toString()?.trim() ?: "hey jarvis"
+            saveWakeWord(text)
+        }
+
+        // Save AI Engine Keys
         binding.btnSaveKeys.setOnClickListener {
             val geminiKey = binding.etGeminiKey.text?.toString()?.trim() ?: ""
             val openAiKey = binding.etOpenAiKey.text?.toString()?.trim() ?: ""
@@ -85,7 +125,7 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "Settings saved successfully!", Toast.LENGTH_SHORT).show()
         }
 
-        // Toggle Background Service
+        // Restart Background Service
         binding.btnToggleService.setOnClickListener {
             val serviceIntent = Intent(this, LockScreenVoiceService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -93,89 +133,25 @@ class MainActivity : AppCompatActivity() {
             } else {
                 startService(serviceIntent)
             }
-            binding.tvServiceStatus.text = "● Service: Active & Running"
-            Toast.makeText(this, "AI Assistant is running in background", Toast.LENGTH_SHORT).show()
+            binding.tvServiceStatus.text = "● Service: Active & Listening"
+            Toast.makeText(this, "Jarvis background service restarted", Toast.LENGTH_SHORT).show()
         }
 
-        // 1. Notification Access Button
+        // Permissions
         binding.btnNotificationAccess.setOnClickListener {
-            val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
-            startActivity(intent)
+            startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
         }
 
-        // 2. Microphone & Calls Permission Button
         binding.btnStandardPerms.setOnClickListener {
             checkAndRequestAppPermissions()
         }
 
-        // 3. Accessibility for Total Phone Control (Taps, Typing, Home, Back)
         binding.btnAccessibility.setOnClickListener {
-            val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-            startActivity(intent)
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }
 
-        // 4. Realme Battery Optimization Exemption
         binding.btnBatterySettings.setOnClickListener {
-            val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-            startActivity(intent)
-        }
-
-        // Voice Recognition & Enrollment Button
-        binding.btnTrainVoice.setOnClickListener {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-                checkAndRequestAppPermissions()
-                return@setOnClickListener
-            }
-
-            binding.btnTrainVoice.isEnabled = false
-            binding.tvVoiceEnrollStatus.text = "🗣️ Speak your desired wake phrase now (e.g. 'Hey Assistant', 'Jarvis', or your choice)..."
-
-            ttsManager.speak("Please say your wake phrase now") {
-                speechInputManager.startListening(
-                    onResult = { phrase ->
-                        val cleanPhrase = phrase.trim()
-                        getSharedPreferences("ai_assistant_prefs", Context.MODE_PRIVATE).edit().apply {
-                            putString("custom_wake_word", cleanPhrase)
-                            putBoolean("voice_enrolled", true)
-                            apply()
-                        }
-                        binding.tvCurrentWakeWord.text = "Current Wake Phrase: '$cleanPhrase'"
-                        binding.tvVoiceEnrollStatus.text = "✅ Voice recognized & saved: '$cleanPhrase'! Assistant will follow when you say it."
-                        binding.btnTrainVoice.isEnabled = true
-                        Toast.makeText(this@MainActivity, "Voice profile saved: '$cleanPhrase'", Toast.LENGTH_LONG).show()
-
-                        // Notify background service to update wake phrase and refresh continuous listening
-                        val restartIntent = Intent(this@MainActivity, LockScreenVoiceService::class.java).apply {
-                            action = LockScreenVoiceService.ACTION_RESTART_LISTENING
-                        }
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                            startForegroundService(restartIntent)
-                        } else {
-                            startService(restartIntent)
-                        }
-
-                        ttsManager.speak("Your voice phrase, $cleanPhrase, has been saved. I am now following your voice.")
-                    },
-                    onError = { error ->
-                        binding.tvVoiceEnrollStatus.text = "Could not hear phrase ($error). Tap below to try again."
-                        binding.btnTrainVoice.isEnabled = true
-                        ttsManager.speak("I didn't catch that. Tap the record button to try again.")
-                    }
-                )
-            }
-        }
-
-        // Live Voice Test FAB
-        binding.fabMicTest.setOnClickListener {
-            val triggerIntent = Intent(this, LockScreenVoiceService::class.java).apply {
-                action = LockScreenVoiceService.ACTION_TRIGGER_VOICE_COMMAND
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForegroundService(triggerIntent)
-            } else {
-                startService(triggerIntent)
-            }
-            binding.tvTestStatus.text = "Listening for your voice command..."
+            startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
         }
     }
 
@@ -188,21 +164,6 @@ class MainActivity : AppCompatActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             permissions.add(Manifest.permission.POST_NOTIFICATIONS)
         }
-
-        val needed = permissions.filter {
-            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
-        }
-
-        if (needed.isNotEmpty()) {
-            requestPermissionsLauncher.launch(needed.toTypedArray())
-        } else {
-            Toast.makeText(this, "Standard permissions already granted!", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        ttsManager.shutdown()
-        speechInputManager.destroyRecognizer()
+        requestPermissionsLauncher.launch(permissions.toTypedArray())
     }
 }
