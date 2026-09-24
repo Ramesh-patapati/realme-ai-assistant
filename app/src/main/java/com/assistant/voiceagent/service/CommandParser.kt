@@ -40,7 +40,21 @@ object CommandParser {
             "scroll up" -> return AIAction.DeviceControl("SCROLL_UP", "Scrolling up")
         }
 
-        // 3. YouTube Playback Matching
+        // 3. App Launching (e.g. "open WhatsApp", "open YouTube", "open Camera", "open Chrome", "open Settings")
+        if (clean.startsWith("open ") || clean.startsWith("launch ") || clean.startsWith("start ")) {
+            val app = clean
+                .removePrefix("open ")
+                .removePrefix("launch ")
+                .removePrefix("start ")
+                .trim()
+            if (app == "youtube") {
+                return AIAction.PlayYouTube("")
+            } else if (app.isNotBlank()) {
+                return AIAction.OpenApp(app)
+            }
+        }
+
+        // 4. YouTube Playback Matching
         if (clean.startsWith("play ") && !clean.contains("game") && !clean.contains("cricket") && !clean.contains("football")) {
             val query = clean
                 .removePrefix("play ")

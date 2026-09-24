@@ -9,5 +9,6 @@ sealed class AIAction {
     data class Answer(val replyText: String) : AIAction()
     data class Clarify(val question: String) : AIAction()
     object Stop : AIAction()
+    data class OpenApp(val appName: String) : AIAction()
     data class Unknown(val rawText: String) : AIAction()
 }

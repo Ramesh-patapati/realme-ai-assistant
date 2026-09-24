@@ -41,6 +41,9 @@ class GeminiProvider(private val client: OkHttpClient) {
     """.trimIndent()
 
     suspend fun callGeminiWithFallback(userInput: String, apiKey: String): AIAction {
+        if (!apiKey.startsWith("AIzaSy")) {
+            return AIAction.Answer("Please enter a valid Gemini API key starting with A I z a in app settings.")
+        }
         var lastError: Exception? = null
         for (model in geminiModels) {
             try {
@@ -51,7 +54,7 @@ class GeminiProvider(private val client: OkHttpClient) {
             }
         }
         Log.e("GeminiProvider", "All Gemini models failed", lastError)
-        return AIAction.Answer("Connection was slow. Could you repeat that?")
+        return AIAction.Answer("Could not reach AI servers. Please check your network connection.")
     }
 
     private suspend fun callGemini(userInput: String, apiKey: String, model: String): AIAction {

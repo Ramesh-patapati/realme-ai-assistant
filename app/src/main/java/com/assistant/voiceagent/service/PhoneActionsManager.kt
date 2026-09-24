@@ -192,4 +192,55 @@ class PhoneActionsManager(private val context: Context) {
             context.startActivity(sendIntent)
         }
     }
+
+    fun openApp(appName: String): ActionResult {
+        val cleanName = appName.trim().lowercase()
+        val pm = context.packageManager
+
+        val packageMap = mapOf(
+            "whatsapp" to "com.whatsapp",
+            "youtube" to "com.google.android.youtube",
+            "chrome" to "com.android.chrome",
+            "browser" to "com.android.chrome",
+            "camera" to "com.oppo.camera",
+            "settings" to "com.android.settings",
+            "maps" to "com.google.android.apps.maps",
+            "gmail" to "com.google.android.gm",
+            "play store" to "com.android.vending",
+            "instagram" to "com.instagram.android",
+            "zomato" to "com.application.zomato",
+            "swiggy" to "in.swiggy.android",
+            "paytm" to "net.one97.paytm",
+            "phonepe" to "com.phonepe.app"
+        )
+
+        val targetPkg = packageMap[cleanName]
+        if (targetPkg != null) {
+            val intent = pm.getLaunchIntentForPackage(targetPkg)
+            if (intent != null) {
+                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                context.startActivity(intent)
+                return ActionResult.Success("Opening $appName")
+            }
+        }
+
+        try {
+            val packages = pm.getInstalledApplications(PackageManager.GET_META_DATA)
+            for (app in packages) {
+                val label = pm.getApplicationLabel(app).toString().lowercase()
+                if (label == cleanName || label.contains(cleanName)) {
+                    val intent = pm.getLaunchIntentForPackage(app.packageName)
+                    if (intent != null) {
+                        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                        context.startActivity(intent)
+                        return ActionResult.Success("Opening $appName")
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("PhoneActions", "Error launching app: $appName", e)
+        }
+
+        return ActionResult.Failure("I could not find $appName on your phone.")
+    }
 }

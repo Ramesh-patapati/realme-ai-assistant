@@ -284,6 +284,12 @@ class LockScreenVoiceService : Service() {
                 }
             }
 
+            is AIAction.OpenApp -> {
+                speakAndResume("Opening ${action.appName}") {
+                    phoneActionsManager.openApp(action.appName)
+                }
+            }
+
             is AIAction.Answer -> {
                 speakAndResume(action.replyText)
             }
