@@ -123,6 +123,7 @@ class ContinuousVoiceDetector(
                 Log.e("VoiceDetector", "Failed to start AudioRecord", e)
                 isRecording = false
             }
+            Unit
         }
     }
 
@@ -141,6 +142,7 @@ class ContinuousVoiceDetector(
             } catch (e: Exception) {
                 Log.w("VoiceDetector", "Error stopping AudioRecord in pause", e)
             }
+            Unit
         }
     }
 
@@ -162,6 +164,7 @@ class ContinuousVoiceDetector(
                 }
                 isPaused = false
             }
+            Unit
         }
     }
 
@@ -182,6 +185,7 @@ class ContinuousVoiceDetector(
             } catch (e: Exception) {
                 Log.e("VoiceDetector", "Error stopping/releasing AudioRecord", e)
             }
+            Unit
         }
     }
 }
