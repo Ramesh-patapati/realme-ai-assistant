@@ -13,6 +13,7 @@ class TtsManager(private val context: Context, private val onInitSuccess: (() ->
     private var tts: TextToSpeech? = null
     private var isReady = false
     private val pendingUtteranceCallbacks = mutableMapOf<String, () -> Unit>()
+    private var pendingSpeech: Pair<String, (() -> Unit)?>? = null
 
     init {
         tts = TextToSpeech(context.applicationContext) { status ->
@@ -22,7 +23,12 @@ class TtsManager(private val context: Context, private val onInitSuccess: (() ->
                 tts?.setPitch(1.0f)
                 isReady = true
                 setupUtteranceListener()
+                Log.d("TtsManager", "TTS engine successfully initialized and ready")
                 onInitSuccess?.invoke()
+                pendingSpeech?.let { (text, onDone) ->
+                    pendingSpeech = null
+                    speak(text, onDone)
+                }
             } else {
                 Log.e("TtsManager", "TextToSpeech initialization failed: $status")
             }
@@ -31,15 +37,19 @@ class TtsManager(private val context: Context, private val onInitSuccess: (() ->
 
     private fun setupUtteranceListener() {
         tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-            override fun onStart(utteranceId: String?) {}
+            override fun onStart(utteranceId: String?) {
+                Log.d("TtsManager", "TTS started speaking")
+            }
 
             override fun onDone(utteranceId: String?) {
+                Log.d("TtsManager", "TTS finished speaking: $utteranceId")
                 utteranceId?.let { id ->
                     pendingUtteranceCallbacks.remove(id)?.invoke()
                 }
             }
 
             override fun onError(utteranceId: String?) {
+                Log.e("TtsManager", "TTS error speaking: $utteranceId")
                 utteranceId?.let { id ->
                     pendingUtteranceCallbacks.remove(id)?.invoke()
                 }
@@ -49,8 +59,8 @@ class TtsManager(private val context: Context, private val onInitSuccess: (() ->
 
     fun speak(text: String, onDone: (() -> Unit)? = null) {
         if (!isReady || tts == null) {
-            Log.w("TtsManager", "TTS is not ready yet")
-            onDone?.invoke()
+            Log.w("TtsManager", "TTS is not ready yet, queuing speech: $text")
+            pendingSpeech = Pair(text, onDone)
             return
         }
 

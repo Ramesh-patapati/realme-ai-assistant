@@ -22,9 +22,8 @@ class AIEngine(private val context: Context) {
 
     // 2026 High-speed models with automatic fallback
     private val geminiModels = listOf(
-        "gemini-3.5-flash-lite",
         "gemini-3.6-flash",
-        "gemini-2.5-flash"
+        "gemini-3.5-flash-lite"
     )
 
     private val systemPrompt = """

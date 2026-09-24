@@ -52,8 +52,17 @@ class LockScreenVoiceService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_TRIGGER_VOICE_COMMAND) {
-            triggerVoiceInteraction()
+        Log.d("VoiceService", "onStartCommand received action: ${intent?.action}")
+        when (intent?.action) {
+            ACTION_TRIGGER_VOICE_COMMAND -> {
+                triggerVoiceInteraction()
+            }
+            "com.assistant.voiceagent.TEST_COMMAND" -> {
+                val command = intent.getStringExtra("command") ?: "What is the capital of India?"
+                Log.d("VoiceService", "Executing direct test command: $command")
+                wakeLock?.acquire(15000L)
+                processUserSpokenCommand(command)
+            }
         }
         return START_STICKY
     }
@@ -80,6 +89,7 @@ class LockScreenVoiceService : Service() {
     }
 
     private fun processUserSpokenCommand(userSpeech: String) {
+        Log.d("VoiceService", "processUserSpokenCommand: received speech '$userSpeech'")
         val prefs = getSharedPreferences("ai_assistant_prefs", Context.MODE_PRIVATE)
         val geminiKey = prefs.getString("gemini_api_key", "") ?: ""
         val openAiKey = prefs.getString("openai_api_key", "") ?: ""
@@ -87,11 +97,13 @@ class LockScreenVoiceService : Service() {
 
         serviceScope.launch {
             val action = aiEngine.processCommand(userSpeech, aiEngineChoice, geminiKey, openAiKey)
+            Log.d("VoiceService", "AI parsed action: $action")
             handleAIAction(action)
         }
     }
 
     private fun handleAIAction(action: AIAction) {
+        Log.d("VoiceService", "Executing handleAIAction: $action")
         when (action) {
             is AIAction.Stop -> {
                 ttsManager.speak("Stopping now. Let me know when you need me!") {
