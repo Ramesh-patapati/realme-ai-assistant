@@ -16,8 +16,8 @@ import java.util.concurrent.TimeUnit
 class AIEngine(private val context: Context) {
 
     private val client = OkHttpClient.Builder()
-        .connectTimeout(6, TimeUnit.SECONDS)
-        .readTimeout(8, TimeUnit.SECONDS)
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(20, TimeUnit.SECONDS)
         .build()
 
     // 2026 High-speed models with automatic fallback
@@ -116,6 +116,9 @@ class AIEngine(private val context: Context) {
                 put("temperature", 0.1)
                 put("maxOutputTokens", 800)
                 put("responseMimeType", "application/json")
+                put("thinkingConfig", JSONObject().apply {
+                    put("thinkingBudget", 0)
+                })
             })
         }
 
