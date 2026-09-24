@@ -14,9 +14,21 @@ object CommandParser {
      * Handles navigation, apps, phone calls, WhatsApp, YouTube, and device controls.
      */
     fun parseDeterministic(userInput: String): AIAction? {
-        val clean = userInput.trim().lowercase().replace(Regex("[.?!,]"), "")
+        var clean = userInput.trim().lowercase().replace(Regex("[.?!,]"), "")
         if (clean in STOP_WORDS) {
             return AIAction.Stop
+        }
+
+        // Strip conversational leading filler words (e.g. "and ", "please ", "can you ")
+        val fillers = listOf(
+            "hey jarvis ", "ok jarvis ", "hello jarvis ", "jarvis ",
+            "and ", "please ", "can you please ", "can you ", "could you please ", "could you ",
+            "i want you to ", "i want to ", "just "
+        )
+        for (filler in fillers) {
+            if (clean.startsWith(filler)) {
+                clean = clean.removePrefix(filler).trim()
+            }
         }
 
         // 1. Time & Date Queries (0ms response)
@@ -54,28 +66,23 @@ object CommandParser {
             }
         }
 
-        // 4. YouTube Playback Matching
-        if (clean.startsWith("play ") && !clean.contains("game") && !clean.contains("cricket") && !clean.contains("football")) {
-            val query = clean
-                .removePrefix("play ")
+        // 4. Music & YouTube Playback Matching (e.g. "play Telugu music", "and play Telugu music", "play believer")
+        val playRegex = Regex("^(play|start playing|put on|stream)\\s+(.+)$")
+        val playMatch = playRegex.find(clean)
+        if (playMatch != null && !clean.contains("game") && !clean.contains("cricket") && !clean.contains("football")) {
+            val rawQuery = playMatch.groupValues[2]
                 .replace(" on youtube", "")
                 .replace(" in youtube", "")
                 .replace(" youtube", "")
                 .trim()
-            if (query.isNotBlank()) {
-                return AIAction.PlayYouTube(query)
+            if (rawQuery.isNotBlank()) {
+                return AIAction.PlayYouTube(rawQuery)
             }
         }
 
-        if (clean.startsWith("search ") && (clean.endsWith(" on youtube") || clean.endsWith(" in youtube"))) {
-            val query = clean
-                .removePrefix("search ")
-                .replace(" on youtube", "")
-                .replace(" in youtube", "")
-                .trim()
-            if (query.isNotBlank()) {
-                return AIAction.PlayYouTube(query)
-            }
+        if (clean.contains("telugu music") || clean.contains("telugu songs") || clean.contains("hindi songs") || clean.contains("music") || clean.contains("songs")) {
+            val query = clean.replace("on youtube", "").replace("in youtube", "").trim()
+            return AIAction.PlayYouTube(query)
         }
 
         // 4. Phone Calls with flexible natural phrasing (e.g. "make a call to Naveen", "call Naveen", "dial 9876543210")
