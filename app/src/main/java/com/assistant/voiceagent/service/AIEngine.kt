@@ -20,6 +20,13 @@ class AIEngine(private val context: Context) {
         .readTimeout(8, TimeUnit.SECONDS)
         .build()
 
+    // 2026 High-speed models with automatic fallback
+    private val geminiModels = listOf(
+        "gemini-3.5-flash-lite",
+        "gemini-3.6-flash",
+        "gemini-2.5-flash"
+    )
+
     private val systemPrompt = """
         You are SiriPulse, a voice assistant with full control over an Android phone.
         Speed is critical. Spoken answers must be punchy, natural, and under 1-2 sentences.
@@ -58,7 +65,7 @@ class AIEngine(private val context: Context) {
             return@withContext AIAction.Stop
         }
 
-        // Direct device commands to bypass network lag entirely
+        // Direct device commands to bypass network latency entirely
         when {
             lower == "go home" || lower == "home screen" -> return@withContext AIAction.DeviceControl("HOME", "Going to home screen")
             lower == "go back" || lower == "back" -> return@withContext AIAction.DeviceControl("BACK", "Going back")
@@ -73,7 +80,7 @@ class AIEngine(private val context: Context) {
             if (preferredEngine.equals("chatgpt", ignoreCase = true) && openAiKey.isNotBlank()) {
                 callOpenAi(userInput, openAiKey)
             } else if (geminiKey.isNotBlank()) {
-                callGemini(userInput, geminiKey)
+                callGeminiWithFallback(userInput, geminiKey)
             } else {
                 AIAction.Answer("Please enter your API key in the app settings first.")
             }
@@ -83,8 +90,18 @@ class AIEngine(private val context: Context) {
         }
     }
 
-    private fun callGemini(userInput: String, apiKey: String): AIAction {
-        val url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=$apiKey"
+    private fun callGeminiWithFallback(userInput: String, apiKey: String): AIAction {
+        for (model in geminiModels) {
+            val result = callGemini(userInput, apiKey, model)
+            if (result != null) {
+                return result
+            }
+        }
+        return AIAction.Answer("I could not reach Gemini AI servers. Please try again.")
+    }
+
+    private fun callGemini(userInput: String, apiKey: String, model: String): AIAction? {
+        val url = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$apiKey"
 
         val jsonBody = JSONObject().apply {
             val contents = JSONArray().apply {
@@ -108,18 +125,24 @@ class AIEngine(private val context: Context) {
             .post(jsonBody.toString().toRequestBody("application/json".toMediaType()))
             .build()
 
-        client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                return AIAction.Answer("Gemini API error code: ${response.code}")
-            }
-            val respString = response.body?.string() ?: return AIAction.Answer("Empty response from AI")
-            val respJson = JSONObject(respString)
-            val candidates = respJson.optJSONArray("candidates")
-            val content = candidates?.optJSONObject(0)?.optJSONObject("content")
-            val parts = content?.optJSONArray("parts")
-            val text = parts?.optJSONObject(0)?.optString("text") ?: ""
+        return try {
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    Log.w("AIEngine", "Model $model returned error ${response.code}")
+                    return null
+                }
+                val respString = response.body?.string() ?: return null
+                val respJson = JSONObject(respString)
+                val candidates = respJson.optJSONArray("candidates")
+                val content = candidates?.optJSONObject(0)?.optJSONObject("content")
+                val parts = content?.optJSONArray("parts")
+                val text = parts?.optJSONObject(0)?.optString("text") ?: ""
 
-            return parseJsonToAction(text, userInput)
+                parseJsonToAction(text, userInput)
+            }
+        } catch (e: Exception) {
+            Log.w("AIEngine", "Failed calling model $model: ${e.message}")
+            null
         }
     }
 
