@@ -83,5 +83,5 @@ Build a high-performance, real-time AI voice assistant for Android that:
 - ✅ **Modular Provider Architecture**: Decoupled `AIEngine.kt` into `CommandParser`, `OpenAiProvider`, and `GeminiProvider`.
 - ✅ **Guaranteed Resource Cleanup on Cancellation**: Implemented `continuation.resume(response) { response.close() }` to ensure zero OkHttp connection leaks under all coroutine cancellation timings.
 - ✅ **Silent Wake-Word Gating**: Audio energy detector opens a silent recognition session to verify the wake word without unprompted TTS interruptions from ambient room sounds.
-- ✅ **Hardware AudioRecord Release on Pause**: `ContinuousVoiceDetector.pause()` calls `audioRecord.stop()` and `resume()` restarts `audioRecord.startRecording()`, guaranteeing zero microphone hardware session collisions across all Android OEM HALs.
+- ✅ **Hardware AudioRecord Release on Pause with Mutex Lock**: `ContinuousVoiceDetector` uses `@Volatile` flags and a synchronized monitor lock. `pause()` is called directly inside the capture thread on voice detection, stopping `audioRecord` before `onVoiceActivityDetected()` dispatches, guaranteeing zero hardware mic collisions.
 - ✅ **On-Device Speech Recognition**: Updated `SpeechInputManager.kt` to prefer `SpeechRecognizer.createOnDeviceSpeechRecognizer` on API 31+ when available.
