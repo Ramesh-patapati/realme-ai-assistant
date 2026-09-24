@@ -23,10 +23,10 @@ class SpeechInputManager(private val context: Context) {
         onResult: (String) -> Unit,
         onError: (String) -> Unit
     ) {
-        startListening(onResult) { _, message -> onError(message) }
+        startContinuousListening(onResult) { _, message -> onError(message) }
     }
 
-    fun startListening(
+    fun startContinuousListening(
         onResult: (String) -> Unit,
         onError: (errorCode: Int, errorMessage: String) -> Unit
     ) {

@@ -119,7 +119,7 @@ class LockScreenVoiceService : Service() {
         val customWakeWord = prefs.getString("custom_wake_word", "hey assistant") ?: "hey assistant"
         Log.d("VoiceService", "startContinuousWakeListening: active wake phrase is '$customWakeWord'")
 
-        speechInputManager.startListening(
+        speechInputManager.startContinuousListening(
             onResult = { recognizedText ->
                 Log.d("VoiceService", "Continuous listening heard: '$recognizedText'")
                 val (wakeDetected, command) = extractWakeWordAndCommand(recognizedText, customWakeWord)
@@ -173,7 +173,7 @@ class LockScreenVoiceService : Service() {
         isListeningForActiveCommand = true
         restartRunnable?.let { restartHandler.removeCallbacks(it) }
 
-        speechInputManager.startListening(
+        speechInputManager.startContinuousListening(
             onResult = { recognizedText ->
                 isListeningForActiveCommand = false
                 Log.d("VoiceService", "Active command heard: '$recognizedText'")
