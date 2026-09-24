@@ -37,7 +37,7 @@ class LockScreenVoiceService : Service() {
     private var restartRunnable: Runnable? = null
     private var isServiceRunning = false
 
-    // Watchdog: force-restarts listening if nothing happens for 20 seconds
+    // Watchdog: force-restarts listening if nothing happens for 25 seconds
     private var watchdogRunnable: Runnable? = null
     private var lastListeningActivity = 0L
 
@@ -46,7 +46,7 @@ class LockScreenVoiceService : Service() {
         const val NOTIFICATION_ID = 1001
         const val ACTION_TRIGGER_VOICE_COMMAND = "com.assistant.voiceagent.TRIGGER_VOICE"
         const val ACTION_RESTART_LISTENING = "com.assistant.voiceagent.RESTART_LISTENING"
-        private const val WATCHDOG_INTERVAL_MS = 20_000L // 20 seconds
+        private const val WATCHDOG_INTERVAL_MS = 25_000L
     }
 
     override fun onCreate() {
@@ -57,8 +57,11 @@ class LockScreenVoiceService : Service() {
 
         val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "AIAssistant:VoiceWakeLock")
-        // Keep CPU alive permanently for continuous listening
-        wakeLock?.acquire()
+        try {
+            wakeLock?.acquire()
+        } catch (e: Exception) {
+            Log.w("VoiceService", "Could not acquire wakeLock: ${e.message}")
+        }
 
         ttsManager = TtsManager(this)
         speechInputManager = SpeechInputManager(this)
@@ -99,7 +102,7 @@ class LockScreenVoiceService : Service() {
         if (cleanCustom.isNotBlank() && cleanCustom != "hey assistant") {
             wakeWords.add(cleanCustom)
         }
-        wakeWords.addAll(listOf("hey assistant", "ok assistant", "hello assistant", "hey jarvis", "ok jarvis", "hello jarvis", "jarvis", "hey siri", "hello siri", "siripulse", "assistant"))
+        wakeWords.addAll(listOf("hey jarvis", "ok jarvis", "hello jarvis", "jarvis", "hey assistant", "ok assistant", "hello assistant", "hey siri", "hello siri", "siripulse", "assistant"))
 
         for (wake in wakeWords) {
             if (cleanSpeech == wake) {
@@ -118,13 +121,12 @@ class LockScreenVoiceService : Service() {
     }
 
     fun startContinuousWakeListening() {
-        if (!isServiceRunning) return
-        isListeningForActiveCommand = false
+        if (!isServiceRunning || isListeningForActiveCommand) return
         restartRunnable?.let { restartHandler.removeCallbacks(it) }
         lastListeningActivity = System.currentTimeMillis()
 
         val prefs = getSharedPreferences("ai_assistant_prefs", Context.MODE_PRIVATE)
-        val customWakeWord = prefs.getString("custom_wake_word", "hey assistant") ?: "hey assistant"
+        val customWakeWord = prefs.getString("custom_wake_word", "hey jarvis") ?: "hey jarvis"
         Log.d("VoiceService", "startContinuousWakeListening: active wake phrase is '$customWakeWord'")
 
         speechInputManager.startContinuousListening(
@@ -140,25 +142,28 @@ class LockScreenVoiceService : Service() {
                         Log.d("VoiceService", "Wake phrase detected! Prompting...")
                         speechInputManager.destroyRecognizer()
                         ttsManager.speak("Yes, I'm listening!") {
-                            listenForActiveCommand()
+                            // Delay slightly after TTS to let audio echo completely fade out before mic turns on
+                            restartHandler.postDelayed({
+                                listenForActiveCommand()
+                            }, 450L)
                         }
                     }
                 } else {
-                    // Ambient speech that didn't match wake word -> seamlessly resume listening
-                    restartContinuousListening(200L)
+                    // Ambient speech that didn't match wake word -> smoothly resume listening
+                    restartContinuousListening(300L)
                 }
             },
             onError = { errorCode, errorMessage ->
                 lastListeningActivity = System.currentTimeMillis()
-                // Silent timeouts and no-match during quiet periods — just loop
                 Log.d("VoiceService", "Continuous listening ended ($errorCode: $errorMessage). Rescheduling loop.")
                 val delay = when (errorCode) {
-                    SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> 1500L
-                    SpeechRecognizer.ERROR_AUDIO -> 2000L
-                    else -> 300L
+                    SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> 1200L
+                    SpeechRecognizer.ERROR_AUDIO -> 1500L
+                    else -> 400L
                 }
                 restartContinuousListening(delay)
-            }
+            },
+            muteBeep = true
         )
     }
 
@@ -173,23 +178,16 @@ class LockScreenVoiceService : Service() {
         restartHandler.postDelayed(restartRunnable!!, delayMs)
     }
 
-    /**
-     * Watchdog timer: checks every 20 seconds if the listening loop is still active.
-     * If no activity for 20+ seconds, force-restart the loop.
-     */
     private fun startWatchdog() {
         watchdogRunnable = object : Runnable {
             override fun run() {
                 if (!isServiceRunning) return
                 val elapsed = System.currentTimeMillis() - lastListeningActivity
                 if (elapsed > WATCHDOG_INTERVAL_MS && !isListeningForActiveCommand) {
-                    Log.w("VoiceService", "WATCHDOG: Listening loop appears dead (${elapsed}ms since last activity). Force-restarting!")
-                    // Cancel any pending restarts
+                    Log.w("VoiceService", "WATCHDOG: Listening loop idle (${elapsed}ms). Refreshing listening session.")
                     restartRunnable?.let { restartHandler.removeCallbacks(it) }
                     speechInputManager.destroyRecognizer()
                     startContinuousWakeListening()
-                } else {
-                    Log.d("VoiceService", "WATCHDOG: OK (last activity ${elapsed}ms ago, activeCommand=$isListeningForActiveCommand)")
                 }
                 restartHandler.postDelayed(this, WATCHDOG_INTERVAL_MS)
             }
@@ -200,7 +198,9 @@ class LockScreenVoiceService : Service() {
     fun triggerVoiceInteraction(customPrompt: String = "How can I help you?") {
         speechInputManager.destroyRecognizer()
         ttsManager.speak(customPrompt) {
-            listenForActiveCommand()
+            restartHandler.postDelayed({
+                listenForActiveCommand()
+            }, 450L)
         }
     }
 
@@ -221,10 +221,10 @@ class LockScreenVoiceService : Service() {
                 isListeningForActiveCommand = false
                 lastListeningActivity = System.currentTimeMillis()
                 Log.w("VoiceService", "Active command error ($errorCode: $errorMessage)")
-                ttsManager.speak("I didn't catch that, going back to standby.") {
-                    restartContinuousListening(600L)
-                }
-            }
+                // If it was just quietness/timeout, return to wake word standby without irritating prompt
+                restartContinuousListening(500L)
+            },
+            muteBeep = false // Audible indicator when actively awaiting user command
         )
     }
 
@@ -263,7 +263,9 @@ class LockScreenVoiceService : Service() {
             is AIAction.Clarify -> {
                 speechInputManager.destroyRecognizer()
                 ttsManager.speak(action.question) {
-                    listenForActiveCommand()
+                    restartHandler.postDelayed({
+                        listenForActiveCommand()
+                    }, 450L)
                 }
             }
 
@@ -379,7 +381,9 @@ class LockScreenVoiceService : Service() {
         restartRunnable?.let { restartHandler.removeCallbacks(it) }
         watchdogRunnable?.let { restartHandler.removeCallbacks(it) }
         if (wakeLock?.isHeld == true) {
-            wakeLock?.release()
+            try {
+                wakeLock?.release()
+            } catch (e: Exception) { /* ignore */ }
         }
         serviceScope.cancel()
         ttsManager.shutdown()

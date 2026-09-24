@@ -2,6 +2,7 @@ package com.assistant.voiceagent.service
 
 import android.content.Context
 import android.content.Intent
+import android.media.AudioManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -15,7 +16,8 @@ class SpeechInputManager(private val context: Context) {
 
     private var speechRecognizer: SpeechRecognizer? = null
     private val mainHandler = Handler(Looper.getMainLooper())
-    private var listenerGeneration = 0  // Prevents stale callbacks from interfering
+    private var listenerGeneration = 0
+    private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
     var isListening: Boolean = false
         private set
@@ -24,15 +26,15 @@ class SpeechInputManager(private val context: Context) {
         onResult: (String) -> Unit,
         onError: (String) -> Unit
     ) {
-        startContinuousListening(onResult) { _, message -> onError(message) }
+        startContinuousListening(onResult, { _, message -> onError(message) }, muteBeep = false)
     }
 
     fun startContinuousListening(
         onResult: (String) -> Unit,
-        onError: (errorCode: Int, errorMessage: String) -> Unit
+        onError: (errorCode: Int, errorMessage: String) -> Unit,
+        muteBeep: Boolean = true
     ) {
         mainHandler.post {
-            // Synchronously destroy any existing recognizer first
             destroyRecognizerSync()
 
             if (!SpeechRecognizer.isRecognitionAvailable(context)) {
@@ -42,6 +44,32 @@ class SpeechInputManager(private val context: Context) {
 
             val currentGeneration = ++listenerGeneration
 
+            // Capture initial volume states
+            val originalSystemVolume = try { audioManager.getStreamVolume(AudioManager.STREAM_SYSTEM) } catch (e: Exception) { 0 }
+            val originalNotifVolume = try { audioManager.getStreamVolume(AudioManager.STREAM_NOTIFICATION) } catch (e: Exception) { 0 }
+            val originalMusicVolume = try { audioManager.getStreamVolume(AudioManager.STREAM_MUSIC) } catch (e: Exception) { 0 }
+
+            if (muteBeep) {
+                try {
+                    audioManager.setStreamVolume(AudioManager.STREAM_SYSTEM, 0, 0)
+                    audioManager.setStreamVolume(AudioManager.STREAM_NOTIFICATION, 0, 0)
+                    audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, 0, 0)
+                } catch (e: Exception) {
+                    Log.w("SpeechInput", "Could not mute streams: ${e.message}")
+                }
+            }
+
+            fun restoreVolumes() {
+                if (!muteBeep) return
+                mainHandler.postDelayed({
+                    try {
+                        audioManager.setStreamVolume(AudioManager.STREAM_SYSTEM, originalSystemVolume, 0)
+                        audioManager.setStreamVolume(AudioManager.STREAM_NOTIFICATION, originalNotifVolume, 0)
+                        audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, originalMusicVolume, 0)
+                    } catch (e: Exception) { /* ignore */ }
+                }, 350L)
+            }
+
             try {
                 speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
                     setRecognitionListener(object : RecognitionListener {
@@ -49,6 +77,7 @@ class SpeechInputManager(private val context: Context) {
                             if (currentGeneration != listenerGeneration) return
                             isListening = true
                             Log.d("SpeechInput", "Ready for speech... (gen=$currentGeneration)")
+                            restoreVolumes()
                         }
 
                         override fun onBeginningOfSpeech() {
@@ -57,7 +86,6 @@ class SpeechInputManager(private val context: Context) {
                         }
 
                         override fun onRmsChanged(rmsdB: Float) {}
-
                         override fun onBufferReceived(buffer: ByteArray?) {}
 
                         override fun onEndOfSpeech() {
@@ -72,6 +100,7 @@ class SpeechInputManager(private val context: Context) {
                                 return
                             }
                             isListening = false
+                            restoreVolumes()
                             val message = when (error) {
                                 SpeechRecognizer.ERROR_NO_MATCH -> "No speech detected"
                                 SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "Speech timed out"
@@ -81,7 +110,6 @@ class SpeechInputManager(private val context: Context) {
                                 else -> "Recognition error: $error"
                             }
                             Log.d("SpeechInput", "Recognition error $error: $message (gen=$currentGeneration)")
-                            // Do NOT destroy here — let the caller restart
                             onError(error, message)
                         }
 
@@ -91,6 +119,7 @@ class SpeechInputManager(private val context: Context) {
                                 return
                             }
                             isListening = false
+                            restoreVolumes()
                             val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                             if (!matches.isNullOrEmpty()) {
                                 val recognized = matches[0]
@@ -112,15 +141,16 @@ class SpeechInputManager(private val context: Context) {
                     putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
                     putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
                     putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
-                    // Keep listening longer before timeout
                     putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 3000L)
+                    putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 3000L)
                     putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 5000L)
                 }
 
                 speechRecognizer?.startListening(intent)
-                Log.d("SpeechInput", "SpeechRecognizer.startListening called (gen=$currentGeneration)")
+                Log.d("SpeechInput", "SpeechRecognizer.startListening called (gen=$currentGeneration, muted=$muteBeep)")
             } catch (e: Exception) {
                 isListening = false
+                restoreVolumes()
                 Log.e("SpeechInput", "Failed to start listening", e)
                 onError(SpeechRecognizer.ERROR_CLIENT, "Failed to start speech recognizer: ${e.message}")
             }
@@ -138,10 +168,6 @@ class SpeechInputManager(private val context: Context) {
         }
     }
 
-    /**
-     * Synchronous destroy — must be called from main thread.
-     * This avoids race conditions where a posted destroyRecognizer kills a newly created one.
-     */
     private fun destroyRecognizerSync() {
         try {
             isListening = false
