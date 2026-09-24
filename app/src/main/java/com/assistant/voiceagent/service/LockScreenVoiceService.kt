@@ -92,7 +92,7 @@ class LockScreenVoiceService : Service() {
         if (cleanCustom.isNotBlank() && cleanCustom != "hey assistant") {
             wakeWords.add(cleanCustom)
         }
-        wakeWords.addAll(listOf("hey assistant", "ok assistant", "hello assistant", "hey siri", "hello siri", "siripulse", "assistant"))
+        wakeWords.addAll(listOf("hey assistant", "ok assistant", "hello assistant", "hey jarvis", "ok jarvis", "hello jarvis", "jarvis", "hey siri", "hello siri", "siripulse", "assistant"))
 
         for (wake in wakeWords) {
             if (cleanSpeech == wake) {
