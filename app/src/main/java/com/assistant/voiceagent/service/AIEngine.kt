@@ -16,8 +16,8 @@ import java.util.concurrent.TimeUnit
 class AIEngine(private val context: Context) {
 
     private val client = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(20, TimeUnit.SECONDS)
+        .connectTimeout(20, TimeUnit.SECONDS)
+        .readTimeout(45, TimeUnit.SECONDS)
         .build()
 
     // 2026 High-speed models with automatic fallback
@@ -64,7 +64,7 @@ class AIEngine(private val context: Context) {
             return@withContext AIAction.Stop
         }
 
-        // Direct device commands to bypass network latency entirely
+        // Direct device and common action shortcuts to eliminate network latency
         when {
             lower == "go home" || lower == "home screen" -> return@withContext AIAction.DeviceControl("HOME", "Going to home screen")
             lower == "go back" || lower == "back" -> return@withContext AIAction.DeviceControl("BACK", "Going back")
@@ -73,6 +73,18 @@ class AIEngine(private val context: Context) {
             lower.contains("lock phone") || lower.contains("lock screen") -> return@withContext AIAction.DeviceControl("LOCK", "Locking phone")
             lower.contains("scroll down") -> return@withContext AIAction.DeviceControl("SCROLL_DOWN", "Scrolling down")
             lower.contains("scroll up") -> return@withContext AIAction.DeviceControl("SCROLL_UP", "Scrolling up")
+            lower.startsWith("play ") && (lower.contains(" on youtube") || lower.contains(" youtube")) -> {
+                val q = lower.removePrefix("play ").replace(" on youtube", "").replace(" youtube", "").trim()
+                return@withContext AIAction.PlayYouTube(q)
+            }
+            lower.startsWith("call ") -> {
+                val contact = lower.removePrefix("call ").trim()
+                return@withContext AIAction.Call(contact)
+            }
+            lower.startsWith("order ") || lower.contains("on zomato") -> {
+                val dish = lower.removePrefix("order ").replace(" on zomato", "").replace(" zomato", "").trim()
+                return@withContext AIAction.OrderFood(dish, null)
+            }
         }
 
         try {
@@ -112,14 +124,15 @@ class AIEngine(private val context: Context) {
                 })
             }
             put("contents", contents)
-            put("generationConfig", JSONObject().apply {
+            val genConfig = JSONObject().apply {
                 put("temperature", 0.1)
                 put("maxOutputTokens", 800)
                 put("responseMimeType", "application/json")
-                put("thinkingConfig", JSONObject().apply {
-                    put("thinkingBudget", 0)
-                })
-            })
+            }
+            if (model.contains("3.6")) {
+                genConfig.put("thinkingConfig", JSONObject().put("thinkingBudget", 0))
+            }
+            put("generationConfig", genConfig)
         }
 
         val request = Request.Builder()
