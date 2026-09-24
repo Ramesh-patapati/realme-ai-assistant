@@ -129,37 +129,14 @@ class LockScreenVoiceService : Service() {
     private fun onVoiceActivityDetected() {
         if (!isServiceRunning || isBusy) return
         isBusy = true
-        Log.d("VoiceService", "Voice activity gate triggered, silently listening for wake word...")
+        Log.d("VoiceService", "Deliberate voice activity confirmed by AudioRecord! Prompting user...")
         voiceDetector.pause()
 
-        val prefs = getSharedPreferences("ai_assistant_prefs", Context.MODE_PRIVATE)
-        val customWakeWord = prefs.getString("custom_wake_word", "hey jarvis") ?: "hey jarvis"
-
-        speechInputManager.startRecognitionSession(
-            onResult = { recognizedText ->
-                Log.d("VoiceService", "Silent gate heard: '$recognizedText'")
-                val (wakeWordMatched, command) = extractWakeWordAndCommand(recognizedText, customWakeWord)
-                if (wakeWordMatched) {
-                    Log.d("VoiceService", "Wake word matched! Command: '$command'")
-                    if (command.isBlank()) {
-                        ttsManager.speak("Yes, I'm listening!") {
-                            mainHandler.postDelayed({
-                                listenForActiveCommand()
-                            }, 300L)
-                        }
-                    } else {
-                        processUserSpokenCommand(command)
-                    }
-                } else {
-                    Log.d("VoiceService", "No wake word in '$recognizedText', ignoring silently.")
-                    resumeBackgroundListening()
-                }
-            },
-            onError = { errorCode, errorMessage ->
-                Log.d("VoiceService", "Silent gate recognition error ($errorCode: $errorMessage), resuming quietly.")
-                resumeBackgroundListening()
-            }
-        )
+        ttsManager.speak("Yes, I'm listening!") {
+            mainHandler.postDelayed({
+                listenForActiveCommand()
+            }, 300L)
+        }
     }
 
     fun triggerVoiceInteraction(customPrompt: String = "How can I help you?") {
@@ -180,7 +157,20 @@ class LockScreenVoiceService : Service() {
         speechInputManager.startRecognitionSession(
             onResult = { recognizedText ->
                 Log.d("VoiceService", "Active command heard: '$recognizedText'")
-                processUserSpokenCommand(recognizedText)
+                val prefs = getSharedPreferences("ai_assistant_prefs", Context.MODE_PRIVATE)
+                val customWakeWord = prefs.getString("custom_wake_word", "hey jarvis") ?: "hey jarvis"
+                val (wakeWordMatched, cleanCommand) = extractWakeWordAndCommand(recognizedText, customWakeWord)
+                val finalCommand = if (wakeWordMatched && cleanCommand.isNotBlank()) cleanCommand else recognizedText
+                if (finalCommand.isNotBlank() && (!wakeWordMatched || cleanCommand.isNotBlank())) {
+                    processUserSpokenCommand(finalCommand)
+                } else {
+                    // Spoke only wake word again
+                    speakAndResume("How can I assist you?") {
+                        mainHandler.postDelayed({
+                            listenForActiveCommand()
+                        }, 300L)
+                    }
+                }
             },
             onError = { errorCode, errorMessage ->
                 Log.w("VoiceService", "Active command error ($errorCode: $errorMessage)")
@@ -188,6 +178,7 @@ class LockScreenVoiceService : Service() {
             }
         )
     }
+
 
     private fun processUserSpokenCommand(userSpeech: String) {
         Log.d("VoiceService", "processUserSpokenCommand: processing '$userSpeech'")

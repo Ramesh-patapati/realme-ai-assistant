@@ -96,8 +96,8 @@ class ContinuousVoiceDetector(
                                 baselineEnergy = (baselineEnergy * 0.95) + (rms * 0.05)
                             }
 
-                            // Trigger threshold: 3.5x baseline and at least 1050 RMS
-                            val triggerThreshold = (baselineEnergy * 3.5).coerceAtLeast(1050.0)
+                            // Trigger threshold: 4.5x baseline and at least 2200.0 RMS (Room ambient is ~900-1200, Speech is 2800-4500)
+                            val triggerThreshold = (baselineEnergy * 4.5).coerceAtLeast(2200.0)
 
                             if (rms > triggerThreshold) {
                                 speechFramesCount++
