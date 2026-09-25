@@ -20,7 +20,7 @@ object CommandParser {
         val fillers = listOf(
             "hey jarvis ", "ok jarvis ", "hello jarvis ", "jarvis ",
             "and ", "please ", "can you please ", "can you ", "could you please ", "could you ",
-            "i want you to ", "i want to ", "just "
+            "i want you to ", "i want to ", "just ", "i said to ", "i said "
         )
         var strippedFiller: Boolean
         do {
@@ -37,6 +37,20 @@ object CommandParser {
         // such as "Hey Jarvis, please stop" are handled locally too.
         if (clean in STOP_WORDS) {
             return AIAction.Stop
+        }
+
+        // Camera photo capture & front camera controls
+        when (clean) {
+            "take a picture", "take picture", "take a photo", "take photo", "capture photo",
+            "capture a photo", "click a picture", "click picture", "click a photo", "click photo",
+            "snap a photo", "snap picture", "snap photo" -> return AIAction.DeviceControl("TAKE_PHOTO", "Taking photo")
+
+            "take a selfie", "take selfie", "selfie", "front camera", "open front camera",
+            "switch to front camera", "take picture from front camera", "take picture from the front camera",
+            "take a picture from the front camera", "take a picture from front camera",
+            "take a picture from front cam", "take a picture from the front cam",
+            "take a picture from the frent cam", "take picture from front cam",
+            "picture from front cam", "photo from front cam" -> return AIAction.DeviceControl("FRONT_CAMERA", "Opening front camera")
         }
 
         // Unbundle compound prefixes like "open whatsapp and ...", "open youtube and ..."

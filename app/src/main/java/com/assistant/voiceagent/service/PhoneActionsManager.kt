@@ -117,6 +117,18 @@ class PhoneActionsManager(private val context: Context) {
                 arrayOf(cleanName)
             )
         }
+        if (exactNumbers.isEmpty()) {
+            val partialSelection = "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ? COLLATE NOCASE"
+            collectExactContactNumbers(
+                ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                projection,
+                cleanName,
+                exactNumbers,
+                partialSelection,
+                arrayOf("%$cleanName%"),
+                allowPartial = true
+            )
+        }
 
         return when (exactNumbers.size) {
             0 -> FindResult.NotFound
@@ -131,17 +143,26 @@ class PhoneActionsManager(private val context: Context) {
         requestedName: String,
         numbers: MutableSet<String>,
         selection: String? = null,
-        selectionArgs: Array<String>? = null
+        selectionArgs: Array<String>? = null,
+        allowPartial: Boolean = false
     ) {
         try {
             context.contentResolver.query(uri, projection, selection, selectionArgs, null)?.use { cursor ->
                 val numberIndex = cursor.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.NUMBER)
                 val nameIndex = cursor.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
                 while (cursor.moveToNext()) {
-                    val displayName = cursor.getString(nameIndex)?.trim()
+                    val displayName = cursor.getString(nameIndex)?.trim() ?: ""
                     val number = cursor.getString(numberIndex)?.trim()
-                    if (displayName.equals(requestedName, ignoreCase = true) && !number.isNullOrBlank()) {
-                        numbers.add(number)
+                    val matches = if (allowPartial) {
+                        displayName.contains(requestedName, ignoreCase = true)
+                    } else {
+                        displayName.equals(requestedName, ignoreCase = true)
+                    }
+                    if (matches && !number.isNullOrBlank()) {
+                        val cleanNum = normalizePhoneNumber(number) ?: number.filter(Char::isDigit)
+                        if (cleanNum.isNotBlank()) {
+                            numbers.add(cleanNum)
+                        }
                     }
                 }
             }
@@ -183,6 +204,24 @@ class PhoneActionsManager(private val context: Context) {
     fun executeDeviceControl(command: String): ActionResult {
         if (command.equals("BATTERY", ignoreCase = true)) {
             return ActionResult.Success(getBatteryStatus())
+        }
+
+        if (command.equals("TAKE_PHOTO", ignoreCase = true)) {
+            val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+            if (audioManager != null) {
+                dispatchMediaKey(audioManager, KeyEvent.KEYCODE_CAMERA)
+                dispatchMediaKey(audioManager, KeyEvent.KEYCODE_VOLUME_DOWN)
+            }
+            return ActionResult.Success("Taking picture")
+        }
+
+        if (command.equals("FRONT_CAMERA", ignoreCase = true)) {
+            val intent = Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE).apply {
+                putExtra("android.intent.extras.CAMERA_FACING", 1)
+                putExtra("android.intent.extra.USE_FRONT_CAMERA", true)
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            return startActivityResult(intent, "Opening front camera")
         }
 
         executeAudioControl(command)?.let { return it }
@@ -376,6 +415,24 @@ class PhoneActionsManager(private val context: Context) {
     fun openApp(appName: String): ActionResult {
         val cleanName = normalizeAppName(appName)
         val pm = context.packageManager
+
+        if (cleanName == "whatsapp") {
+            val waIntent = pm.getLaunchIntentForPackage("com.whatsapp")
+                ?: pm.getLaunchIntentForPackage("com.whatsapp.w4b")
+                ?: Intent(Intent.ACTION_MAIN).apply {
+                    setClassName("com.whatsapp", "com.whatsapp.Main")
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+            return startActivityResult(waIntent, "Opening WhatsApp")
+        }
+
+        if (cleanName == "youtube") {
+            val ytIntent = pm.getLaunchIntentForPackage("com.google.android.youtube")
+                ?: Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com")).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+            return startActivityResult(ytIntent, "Opening YouTube")
+        }
 
         val packageMap = mapOf(
             "whatsapp" to listOf("com.whatsapp"),
