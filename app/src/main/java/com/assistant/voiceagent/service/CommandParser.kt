@@ -62,6 +62,15 @@ object CommandParser {
             "scroll up" -> return AIAction.DeviceControl("SCROLL_UP", "Scrolling up")
         }
 
+        // Messages & Notification Queries (e.g. "new messages", "any new messages", "check messages", "read messages")
+        if (clean.contains("new messages") || clean.contains("unread messages") || clean.contains("check messages") || clean.contains("read messages") || clean.contains("any messages") || clean == "messages") {
+            return AIAction.OpenApp("whatsapp")
+        }
+
+        if (clean in listOf("repeat", "say that again", "repeat that", "what did you say", "could you repeat that", "pardon")) {
+            return AIAction.Answer("I am here! You can ask me to make calls, send WhatsApp messages, play music, or open apps.")
+        }
+
         // 3. Music & YouTube Playback Matching (e.g. "play Telugu music", "and play Telugu music", "play believer")
         val playRegex = Regex("^(play|start playing|put on|stream)\\s+(.+)$")
         val playMatch = playRegex.find(clean)
