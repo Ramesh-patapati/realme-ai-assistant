@@ -17,6 +17,13 @@ Build a high-performance, real-time AI voice assistant for Android that:
    - General knowledge Q&A via AI Engine
 3. **Dual Engine Support**: Google Gemini API & OpenAI Codex / GPT-4o with strict Function Calling.
 
+### Priority User Aim (Call and WhatsApp)
+The owner's main goal is to control the phone by voice, quickly and reliably, by saying **"Hey Jarvis, call [contact]"** or **"Hey Jarvis, send a WhatsApp message to [contact] saying [message]"**. These common commands should be parsed and routed locally with no cloud AI round-trip. Calls should use the intended contact and report permission, missing-contact, or ambiguous-contact problems clearly. WhatsApp commands must identify the full contact name and exact message; never guess a recipient or silently open a blank/generic chat.
+
+**Current behavior to validate and improve:** phone calls use Android's direct-call intent after contact lookup. WhatsApp currently opens the contact conversation with the text prefilled; it does not press Send, so the user must review and send the draft. The voice prompt must not claim a message was sent. Automatic sending, if pursued, needs explicit device-side validation of WhatsApp UI behavior and a clear user authorization/confirmation design.
+
+**Acceptance checks for Antigravity on the Realme 7 Pro:** test one-word and multi-word contact names, "call [name]" / "call to [name]", WhatsApp messages containing natural punctuation or multiple words, missing message text, duplicate contacts, denied Contacts/Call permissions, lock-screen use, and the actual WhatsApp handoff. Record whether each command was handled locally, time from end-of-utterance to action, and whether the exact intended contact/message was used.
+
 ---
 
 ## 2. Updated Modular Architecture

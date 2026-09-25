@@ -15,6 +15,7 @@ object CommandParser {
      */
     fun parseDeterministic(userInput: String): AIAction? {
         var clean = userInput.trim().lowercase().replace(Regex("[.?!,]"), "")
+        var originalCommand = userInput.trim()
         if (clean in STOP_WORDS) {
             return AIAction.Stop
         }
@@ -28,13 +29,18 @@ object CommandParser {
         for (filler in fillers) {
             if (clean.startsWith(filler)) {
                 clean = clean.removePrefix(filler).trim()
+                originalCommand = removeLeadingPhrase(originalCommand, filler.trim())
             }
         }
 
         // Unbundle compound prefixes like "open whatsapp and ...", "open youtube and ..."
         if (clean.startsWith("open whatsapp and ") || clean.startsWith("launch whatsapp and ")) {
+            val prefix = if (clean.startsWith("open whatsapp and ")) "open whatsapp and" else "launch whatsapp and"
+            originalCommand = removeLeadingPhrase(originalCommand, prefix)
             clean = clean.removePrefix("open whatsapp and ").removePrefix("launch whatsapp and ").trim()
         } else if (clean.startsWith("open youtube and ") || clean.startsWith("launch youtube and ")) {
+            val prefix = if (clean.startsWith("open youtube and ")) "open youtube and" else "launch youtube and"
+            originalCommand = removeLeadingPhrase(originalCommand, prefix)
             clean = clean.removePrefix("open youtube and ").removePrefix("launch youtube and ").trim()
             if (!clean.startsWith("play ") && !clean.startsWith("stream ") && !clean.startsWith("search ")) {
                 clean = "play $clean"
@@ -102,50 +108,10 @@ object CommandParser {
             }
         }
 
-        // 5. WhatsApp Message & Contact Parsing (e.g. "message to Naveen say hi", "Mr Naveen in WhatsApp", "send message to Naveen")
-        val isExplicitWhatsApp = clean.contains("whatsapp") || clean.contains("in whatsapp") || clean.contains("on whatsapp")
-        var waClean = clean
-            .replace(" in whatsapp", "")
-            .replace(" on whatsapp", "")
-            .replace(" via whatsapp", "")
-            .trim()
-        if (waClean.endsWith(" whatsapp")) {
-            waClean = waClean.removeSuffix(" whatsapp").trim()
-        }
-
-        val whatsappRegex = Regex("^(send whatsapp message to|send whatsapp to|whatsapp to|whatsapp|send a message to|send message to|send a text to|send text to|message to|message|text to|text|chat with)\\s+(.+)$")
-        val waMatch = whatsappRegex.find(waClean)
-        if (waMatch != null) {
-            val remainder = waMatch.groupValues[2].trim()
-            val parts = remainder.split(Regex(" (saying|say|that|message|msg|text) |: "))
-            if (parts.size >= 2) {
-                val contact = formatName(parts[0].trim())
-                val message = parts.subList(1, parts.size).joinToString(" ").trim()
-                if (contact.isNotBlank()) {
-                    return AIAction.SendWhatsApp(contact, message)
-                }
-            } else {
-                val words = remainder.split(" ").filter { it.isNotBlank() }
-                if (words.size >= 2) {
-                    val contact = formatName(words[0])
-                    val message = words.subList(1, words.size).joinToString(" ")
-                    return AIAction.SendWhatsApp(contact, message)
-                } else if (words.isNotEmpty()) {
-                    val contact = formatName(words[0])
-                    return AIAction.SendWhatsApp(contact, "")
-                }
-            }
-        } else if (isExplicitWhatsApp && !clean.startsWith("open ") && !clean.startsWith("launch ")) {
-            val raw = waClean
-                .removePrefix("chat with ")
-                .removePrefix("message ")
-                .removePrefix("to ")
-                .trim()
-            val contact = formatName(raw)
-            if (contact.isNotBlank()) {
-                return AIAction.SendWhatsApp(contact, "")
-            }
-        }
+        // 5. WhatsApp: require a clear contact/message boundary so multi-word names
+        // are not accidentally split into a one-word contact and partial message.
+        val whatsappAction = parseWhatsAppCommand(originalCommand)
+        if (whatsappAction != null) return whatsappAction
 
         // 6. Food Ordering
         if (clean.startsWith("order ") && (clean.contains("food") || clean.contains("pizza") || clean.contains("burger") || clean.contains("biryani") || clean.contains("zomato"))) {
@@ -194,5 +160,65 @@ object CommandParser {
             .joinToString(" ") { word ->
                 word.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() }
             }
+    }
+
+    private fun parseWhatsAppCommand(command: String): AIAction? {
+        val normalizedCommand = command
+            .replace(Regex("\\s+(?:on|in|via)\\s+whats\\s?app\\s+", RegexOption.IGNORE_CASE), " ")
+            .replace(Regex("whats app", RegexOption.IGNORE_CASE), "whatsapp")
+        val prefixes = listOf(
+            "send a whatsapp message to ", "send whatsapp message to ",
+            "send a whatsapp to ", "send whatsapp to ", "whatsapp to ",
+            "whatsapp message to ",
+            "send a message on whatsapp to ", "send message on whatsapp to ",
+            "send a message to ", "send message to ",
+            "send a text to ", "send text to ", "message to ", "text to ", "chat with ",
+            "whatsapp ", "message ", "text "
+        )
+        val prefix = prefixes.firstOrNull { normalizedCommand.startsWith(it, ignoreCase = true) }
+        
+        if (prefix == null) {
+            val isExplicitWhatsApp = normalizedCommand.contains("whatsapp", ignoreCase = true)
+            if (isExplicitWhatsApp && !command.startsWith("open ", ignoreCase = true) && !command.startsWith("launch ", ignoreCase = true)) {
+                val cleanTarget = normalizedCommand
+                    .replace(Regex("\\s+(?:on|in|via)\\s+whatsapp\\b", RegexOption.IGNORE_CASE), "")
+                    .replace(Regex("whatsapp", RegexOption.IGNORE_CASE), "")
+                    .removePrefix("chat with ")
+                    .removePrefix("message ")
+                    .removePrefix("to ")
+                    .trim()
+                val contact = formatName(cleanTarget)
+                if (contact.isNotBlank()) {
+                    return AIAction.SendWhatsApp(contact, "")
+                }
+            }
+            return null
+        }
+
+        var body = normalizedCommand.substring(prefix.length).trim()
+
+        // Ignore channel labels even when speakers place them before the message.
+        body = body.replace(Regex("\\s+(?:on|in|via)\\s+whats\\s?app\\b", RegexOption.IGNORE_CASE), " ").trim()
+
+        val separator = Regex("\\s+(?:saying|say|that|message|msg|text)\\s+|\\s*:\\s*", RegexOption.IGNORE_CASE)
+        val match = separator.find(body)
+        if (match == null) {
+            val contact = formatName(body)
+            return if (contact.isBlank()) {
+                AIAction.Clarify("Who should I message on WhatsApp?")
+            } else {
+                AIAction.Clarify("What message should I send to $contact?")
+            }
+        }
+
+        val contact = formatName(body.substring(0, match.range.first).trim())
+        val message = body.substring(match.range.last + 1).trim()
+        if (contact.isBlank()) return AIAction.Clarify("Who should I message on WhatsApp?")
+        if (message.isBlank()) return AIAction.Clarify("What message should I send to $contact?")
+        return AIAction.SendWhatsApp(contact, message)
+    }
+
+    private fun removeLeadingPhrase(text: String, phrase: String): String {
+        return if (text.startsWith(phrase, ignoreCase = true)) text.substring(phrase.length).trimStart(' ', '\t', ',', ':') else text
     }
 }

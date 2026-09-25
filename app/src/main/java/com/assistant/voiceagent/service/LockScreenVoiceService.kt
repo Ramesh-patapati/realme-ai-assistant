@@ -296,7 +296,12 @@ class LockScreenVoiceService : Service() {
             }
 
             is AIAction.SendWhatsApp -> {
-                speakAndResume("Sending message to ${action.contactName}") {
+                val speechText = if (action.message.isNotBlank()) {
+                    "Opening WhatsApp with message for ${action.contactName}"
+                } else {
+                    "Opening WhatsApp chat with ${action.contactName}"
+                }
+                speakAndResume(speechText) {
                     phoneActionsManager.sendWhatsApp(action.contactName, action.message)
                 }
             }
