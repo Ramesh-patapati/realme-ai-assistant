@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
-import android.database.Cursor
 import android.media.AudioManager
 import android.net.Uri
 import android.os.SystemClock
@@ -15,6 +14,8 @@ import android.provider.Settings
 import android.util.Log
 import android.view.KeyEvent
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class PhoneActionsManager(private val context: Context) {
 
@@ -24,7 +25,9 @@ class PhoneActionsManager(private val context: Context) {
         data class Failure(val reason: String) : ActionResult()
     }
 
-    fun makeCall(contactNameOrNumber: String): ActionResult {
+    suspend fun makeCall(contactNameOrNumber: String): ActionResult {
+        val target = contactNameOrNumber.trim()
+        if (target.isBlank()) return ActionResult.Failure("I didn't catch who you want to call.")
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) != PackageManager.PERMISSION_GRANTED) {
             val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
                 data = Uri.fromParts("package", context.packageName, null)
@@ -36,33 +39,34 @@ class PhoneActionsManager(private val context: Context) {
             )
         }
 
-        val phoneNumber = if (contactNameOrNumber.matches(Regex("^[0-9+ ]+$"))) {
-            contactNameOrNumber
-        } else {
-            val found = findPhoneNumberByName(contactNameOrNumber)
-            if (found is FindResult.PermissionNeeded) {
+        val phoneNumber = normalizePhoneNumber(target) ?: when (
+            val found = withContext(Dispatchers.IO) { findPhoneNumberByName(target) }
+        ) {
+            FindResult.PermissionNeeded -> {
                 val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
                     data = Uri.fromParts("package", context.packageName, null)
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK
                 }
                 return ActionResult.PermissionNeeded(
-                    "I need permission to read your contacts to find $contactNameOrNumber. Opening settings now.",
+                    "I need permission to read your contacts to find $target. Opening settings now.",
                     intent
                 )
-            } else if (found is FindResult.Found) {
-                found.number
-            } else {
-                return ActionResult.Failure("I could not find $contactNameOrNumber in your contacts.")
             }
+            is FindResult.Found -> normalizePhoneNumber(found.number)
+                ?: return ActionResult.Failure("The saved number for $target isn't valid.")
+            is FindResult.Ambiguous -> return ActionResult.Failure(
+                "I found more than one number for $target. Please make the contact name more specific."
+            )
+            FindResult.NotFound -> return ActionResult.Failure("I couldn't find an exact contact named $target.")
         }
 
         return try {
             val callIntent = Intent(Intent.ACTION_CALL).apply {
-                data = Uri.parse("tel:${phoneNumber.replace(" ", "")}")
+                data = Uri.fromParts("tel", phoneNumber, null)
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
             }
             context.startActivity(callIntent)
-            ActionResult.Success("Calling $contactNameOrNumber")
+            ActionResult.Success("Calling $target")
         } catch (e: Exception) {
             Log.e("PhoneActions", "Failed to initiate call", e)
             ActionResult.Failure("Failed to dial the number.")
@@ -71,6 +75,7 @@ class PhoneActionsManager(private val context: Context) {
 
     sealed class FindResult {
         data class Found(val number: String) : FindResult()
+        data class Ambiguous(val matchingNumbers: Int) : FindResult()
         object NotFound : FindResult()
         object PermissionNeeded : FindResult()
     }
@@ -86,72 +91,59 @@ class PhoneActionsManager(private val context: Context) {
             ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME
         )
 
-        // 1. First try Android's official CONTENT_FILTER_URI (case-insensitive phonetic & prefix matching)
-        var cursor: Cursor? = null
+        val exactNumbers = linkedSetOf<String>()
+        val filterUri = Uri.withAppendedPath(
+            ContactsContract.CommonDataKinds.Phone.CONTENT_FILTER_URI,
+            Uri.encode(cleanName)
+        )
+        collectExactContactNumbers(filterUri, projection, cleanName, exactNumbers)
+        if (exactNumbers.isEmpty()) {
+            val exactSelection = "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} = ? COLLATE NOCASE"
+            collectExactContactNumbers(
+                ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                projection,
+                cleanName,
+                exactNumbers,
+                exactSelection,
+                arrayOf(cleanName)
+            )
+        }
+
+        return when (exactNumbers.size) {
+            0 -> FindResult.NotFound
+            1 -> FindResult.Found(exactNumbers.first())
+            else -> FindResult.Ambiguous(exactNumbers.size)
+        }
+    }
+
+    private fun collectExactContactNumbers(
+        uri: Uri,
+        projection: Array<String>,
+        requestedName: String,
+        numbers: MutableSet<String>,
+        selection: String? = null,
+        selectionArgs: Array<String>? = null
+    ) {
         try {
-            val filterUri = Uri.withAppendedPath(ContactsContract.CommonDataKinds.Phone.CONTENT_FILTER_URI, Uri.encode(cleanName))
-            cursor = context.contentResolver.query(filterUri, projection, null, null, null)
-            if (cursor != null && cursor.moveToFirst()) {
-                val numberIndex = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
-                val nameIndex = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
-                var fallbackNumber: String? = null
-                do {
-                    val displayName = if (nameIndex >= 0) cursor.getString(nameIndex) else ""
-                    val number = if (numberIndex >= 0) cursor.getString(numberIndex) else ""
-                    if (displayName.equals(cleanName, ignoreCase = true) && !number.isNullOrBlank()) {
-                        return FindResult.Found(number)
+            context.contentResolver.query(uri, projection, selection, selectionArgs, null)?.use { cursor ->
+                val numberIndex = cursor.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.NUMBER)
+                val nameIndex = cursor.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
+                while (cursor.moveToNext()) {
+                    val displayName = cursor.getString(nameIndex)?.trim()
+                    val number = cursor.getString(numberIndex)?.trim()
+                    if (displayName.equals(requestedName, ignoreCase = true) && !number.isNullOrBlank()) {
+                        numbers.add(number)
                     }
-                    if (fallbackNumber == null && !number.isNullOrBlank()) {
-                        fallbackNumber = number
-                    }
-                } while (cursor.moveToNext())
-
-                if (!fallbackNumber.isNullOrBlank()) {
-                    return FindResult.Found(fallbackNumber)
                 }
             }
         } catch (e: Exception) {
-            Log.w("PhoneActions", "CONTENT_FILTER_URI search failed for $cleanName, falling back to LIKE", e)
-        } finally {
-            cursor?.close()
+            Log.w("PhoneActions", "Contact query failed for $requestedName", e)
         }
+    }
 
-        // 2. Fallback to case-insensitive LIKE query
-        val uri = ContactsContract.CommonDataKinds.Phone.CONTENT_URI
-        val selection = "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ? COLLATE NOCASE"
-        val selectionArgs = arrayOf("%$cleanName%")
-
-        return try {
-            cursor = context.contentResolver.query(uri, projection, selection, selectionArgs, null)
-            if (cursor != null && cursor.moveToFirst()) {
-                val numberIndex = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
-                val nameIndex = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
-                var fallbackNumber: String? = null
-                do {
-                    val displayName = if (nameIndex >= 0) cursor.getString(nameIndex) else ""
-                    val number = if (numberIndex >= 0) cursor.getString(numberIndex) else ""
-                    if (displayName.equals(cleanName, ignoreCase = true) && !number.isNullOrBlank()) {
-                        return FindResult.Found(number)
-                    }
-                    if (fallbackNumber == null && !number.isNullOrBlank()) {
-                        fallbackNumber = number
-                    }
-                } while (cursor.moveToNext())
-
-                if (!fallbackNumber.isNullOrBlank()) {
-                    FindResult.Found(fallbackNumber)
-                } else {
-                    FindResult.NotFound
-                }
-            } else {
-                FindResult.NotFound
-            }
-        } catch (e: Exception) {
-            Log.e("PhoneActions", "Error querying contacts", e)
-            FindResult.NotFound
-        } finally {
-            cursor?.close()
-        }
+    private fun normalizePhoneNumber(value: String): String? {
+        val compact = value.replace(Regex("[\\s().-]"), "")
+        return compact.takeIf { it.matches(Regex("^\\+?[0-9]{3,}$")) }
     }
 
     fun getBatteryStatus(): String {
@@ -325,57 +317,46 @@ class PhoneActionsManager(private val context: Context) {
         }
     }
 
-    fun sendWhatsApp(contactName: String, message: String): ActionResult {
-        val phoneNumber = if (contactName.matches(Regex("^[0-9+ ]+$"))) {
-            contactName.replace(" ", "")
-        } else {
-            val found = findPhoneNumberByName(contactName)
-            when (found) {
-                is FindResult.Found -> found.number.replace(" ", "")
-                is FindResult.PermissionNeeded -> {
-                    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                        data = Uri.fromParts("package", context.packageName, null)
-                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                    }
-                    return ActionResult.PermissionNeeded(
-                        "I need permission to read your contacts to message $contactName on WhatsApp.",
-                        intent
-                    )
+    suspend fun sendWhatsApp(contactName: String, message: String): ActionResult {
+        val recipient = contactName.trim()
+        if (recipient.isBlank()) return ActionResult.Failure("I didn't catch who you want to message.")
+        if (message.isBlank()) return ActionResult.Failure("I didn't catch the WhatsApp message.")
+
+        val phoneNumber = normalizePhoneNumber(recipient) ?: when (
+            val found = withContext(Dispatchers.IO) { findPhoneNumberByName(recipient) }
+        ) {
+            FindResult.PermissionNeeded -> {
+                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                    data = Uri.fromParts("package", context.packageName, null)
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
                 }
-                is FindResult.NotFound -> {
-                    return ActionResult.Failure("I could not find $contactName in your contacts.")
-                }
+                return ActionResult.PermissionNeeded(
+                    "I need permission to read your contacts to find $recipient. Opening settings now.",
+                    intent
+                )
             }
+            is FindResult.Found -> found.number
+            is FindResult.Ambiguous -> return ActionResult.Failure(
+                "I found more than one number for $recipient. Please make the contact name more specific."
+            )
+            FindResult.NotFound -> return ActionResult.Failure("I couldn't find an exact contact named $recipient.")
+        }
+        val waNumber = phoneNumber.filter(Char::isDigit)
+        if (waNumber.length !in 7..15) {
+            return ActionResult.Failure("The phone number for $recipient doesn't look valid for WhatsApp.")
         }
 
         return try {
-            val cleanNumber = phoneNumber.replace("+", "").trim()
-            val uri = Uri.parse("https://api.whatsapp.com/send?phone=$cleanNumber&text=${Uri.encode(message)}")
+            val uri = Uri.parse("https://api.whatsapp.com/send?phone=$waNumber&text=${Uri.encode(message)}")
             val intent = Intent(Intent.ACTION_VIEW, uri).apply {
                 setPackage("com.whatsapp")
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
             }
             context.startActivity(intent)
-            val speech = if (message.isNotBlank()) {
-                "Opening WhatsApp with message for $contactName"
-            } else {
-                "Opening WhatsApp chat with $contactName"
-            }
-            ActionResult.Success(speech)
+            ActionResult.Success("Opened a WhatsApp draft for $recipient. Review it and tap send.")
         } catch (e: Exception) {
-            try {
-                val sendIntent = Intent(Intent.ACTION_SEND).apply {
-                    type = "text/plain"
-                    setPackage("com.whatsapp")
-                    putExtra(Intent.EXTRA_TEXT, message)
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                }
-                context.startActivity(sendIntent)
-                ActionResult.Success("Opening WhatsApp")
-            } catch (ex: Exception) {
-                Log.e("PhoneActions", "Failed to launch WhatsApp", ex)
-                ActionResult.Failure("WhatsApp is not installed on this phone.")
-            }
+            Log.e("PhoneActions", "Failed to open WhatsApp draft for $recipient", e)
+            ActionResult.Failure("I couldn't open WhatsApp for $recipient.")
         }
     }
 

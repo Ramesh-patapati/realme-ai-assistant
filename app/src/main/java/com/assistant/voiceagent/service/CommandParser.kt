@@ -16,24 +16,25 @@ object CommandParser {
     fun parseDeterministic(userInput: String): AIAction? {
         var clean = userInput.trim().lowercase().replace(Regex("[.?!,]"), "")
         var originalCommand = userInput.trim()
-        if (clean in STOP_WORDS) {
-            return AIAction.Stop
-        }
-
         // Strip conversational leading filler words (e.g. "and ", "please ", "can you ")
         val fillers = listOf(
             "hey jarvis ", "ok jarvis ", "hello jarvis ", "jarvis ",
             "and ", "please ", "can you please ", "can you ", "could you please ", "could you ",
             "i want you to ", "i want to ", "just "
         )
-        for (filler in fillers) {
-            if (clean.startsWith(filler)) {
+        var strippedFiller: Boolean
+        do {
+            strippedFiller = false
+            val filler = fillers.firstOrNull { clean.startsWith(it) }
+            if (filler != null) {
                 clean = clean.removePrefix(filler).trim()
                 originalCommand = removeLeadingPhrase(originalCommand, filler.trim())
+                strippedFiller = true
             }
-        }
+        } while (strippedFiller)
 
-        // Catch stop words even if preceded by wake word or fillers (e.g. "Hey Jarvis, stop")
+        // Check after removing the wake word and conversational fillers, so phrases
+        // such as "Hey Jarvis, please stop" are handled locally too.
         if (clean in STOP_WORDS) {
             return AIAction.Stop
         }

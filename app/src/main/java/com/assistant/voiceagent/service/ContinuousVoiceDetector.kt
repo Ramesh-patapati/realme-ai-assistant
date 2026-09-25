@@ -34,7 +34,10 @@ class ContinuousVoiceDetector(
 
     // Adaptive noise threshold
     private var baselineEnergy = 400.0
-    private val consecutiveSpeechFramesNeeded = 2
+    // Read 20 ms chunks and require a short sustained voice onset. This filters brief
+    // clicks/impacts while starting recognition quickly enough to catch the wake word.
+    private val frameSamples = sampleRate / 50
+    private val consecutiveSpeechFramesNeeded = 5
 
     @SuppressLint("MissingPermission")
     fun startListening() {
@@ -59,10 +62,10 @@ class ContinuousVoiceDetector(
                 }
 
                 audioRecord?.startRecording()
-                Log.d("VoiceDetector", "Continuous AudioRecord started successfully (Zero buzzer/clicks)")
+                Log.d("VoiceDetector", "Continuous AudioRecord started successfully")
 
                 recordingThread = Thread({
-                    val buffer = ShortArray(1024)
+                    val buffer = ShortArray(frameSamples)
                     var speechFramesCount = 0
 
                     while (isRecording) {

@@ -19,10 +19,9 @@ import kotlin.coroutines.resumeWithException
 class GeminiProvider(private val client: OkHttpClient) {
 
     private val geminiModels = listOf(
-        "gemini-1.5-flash",
-        "gemini-1.5-pro",
         "gemini-2.5-flash",
-        "gemini-1.5-flash-8b"
+        "gemini-2.0-flash",
+        "gemini-1.5-flash",
     )
 
     private val systemInstruction = """
@@ -32,9 +31,9 @@ class GeminiProvider(private val client: OkHttpClient) {
         Analyze the user's voice command and respond STRICTLY with a single JSON object:
         - If stopping: {"action": "STOP", "speech": "Stopping now."}
         - If incomplete/ambiguous: {"action": "CLARIFY", "question": "<Question>"}
-        - If phone navigation/hardware: {"action": "DEVICE_CONTROL", "command": "HOME|BACK|SCREENSHOT|NOTIFICATIONS|LOCK|SCROLL_DOWN|SCROLL_UP", "speech": "<Short speech>"}
+        - If phone navigation/hardware: {"action": "DEVICE_CONTROL", "command": "HOME|BACK|SCREENSHOT|NOTIFICATIONS|LOCK|SCROLL_DOWN|SCROLL_UP|VOLUME_UP|VOLUME_DOWN|VOLUME_MUTE|VOLUME_UNMUTE|MEDIA_PAUSE|MEDIA_PLAY", "speech": "<Short speech>"}
         - If calling: {"action": "CALL", "contact": "<Name>", "speech": "Calling <Name>"}
-        - If WhatsApp: {"action": "WHATSAPP", "contact": "<Name>", "message": "<Text>", "speech": "Sending to <Name>"}
+        - If WhatsApp: {"action": "WHATSAPP", "contact": "<Name>", "message": "<Text>", "speech": "Opening a WhatsApp draft for <Name>"}
         - If YouTube: {"action": "YOUTUBE", "query": "<Song/Video>", "speech": "Playing <Song> on YouTube"}
         - If food: {"action": "ZOMATO", "item": "<Food>", "restaurant": "<Optional>", "speech": "Opening Zomato"}
         - If general question: {"action": "ANSWER", "speech": "<Short spoken answer>"}

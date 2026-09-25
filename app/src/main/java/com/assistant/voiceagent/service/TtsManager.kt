@@ -70,7 +70,11 @@ class TtsManager(private val context: Context, private val onInitSuccess: (() ->
             pendingUtteranceCallbacks[utteranceId] = onDone
         }
 
-        val params = Bundle()
+        // Use full TTS engine volume so Jarvis is clearly audible. The actual
+        // loudness is still governed by the user's media-stream slider.
+        val params = Bundle().apply {
+            putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f)
+        }
 
         tts?.speak(text, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
     }

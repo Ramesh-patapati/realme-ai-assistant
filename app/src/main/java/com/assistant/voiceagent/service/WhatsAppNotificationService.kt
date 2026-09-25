@@ -94,15 +94,23 @@ class WhatsAppNotificationService : NotificationListenerService() {
                             resumeVoiceService()
                         }
                     } else {
-                        val replyText = recognizedText.removePrefix("reply").removePrefix("say").trim()
-                        val sent = sendQuickReply(sbn, replyText)
-                        val confirmation = if (sent) {
-                            "Replied to $sender: $replyText"
+                        val replyText = recognizedText
+                            .replace(Regex("^(reply|say)\\b\\s*", RegexOption.IGNORE_CASE), "")
+                            .trim()
+                        if (replyText.isBlank()) {
+                            ttsManager.speak("I didn't hear a reply message.") {
+                                resumeVoiceService()
+                            }
                         } else {
-                            "Could not send reply directly."
-                        }
-                        ttsManager.speak(confirmation) {
-                            resumeVoiceService()
+                            val sent = sendQuickReply(sbn, replyText)
+                            val confirmation = if (sent) {
+                                "Replied to $sender: $replyText"
+                            } else {
+                                "Could not send reply directly."
+                            }
+                            ttsManager.speak(confirmation) {
+                                resumeVoiceService()
+                            }
                         }
                     }
                 },

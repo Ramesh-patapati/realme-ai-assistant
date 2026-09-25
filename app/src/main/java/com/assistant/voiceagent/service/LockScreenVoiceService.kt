@@ -64,7 +64,8 @@ class LockScreenVoiceService : Service() {
         aiEngine = AIEngine(this)
         phoneActionsManager = PhoneActionsManager(this)
 
-        // Initialize continuous voice activity detector (AudioRecord based - NO BUZZER / NO CLICKS)
+        // Keep one continuous AudioRecord stream and start SpeechRecognizer only after
+        // a sustained sound onset; OEM recognition tones may still depend on the device.
         voiceDetector = ContinuousVoiceDetector(this) {
             mainHandler.post {
                 onVoiceActivityDetected()
@@ -163,18 +164,10 @@ class LockScreenVoiceService : Service() {
                         }
                     }
                 } else {
-                    // One-breath fallback: if speech recognizer started late and missed "Hey Jarvis",
-                    // but caught a clear deterministic command (e.g. "what is my battery", "call Mom", "pause music"):
-                    val directAction = CommandParser.parseDeterministic(recognizedText)
-                    if (directAction != null && directAction !is AIAction.Unknown && directAction !is AIAction.Clarify) {
-                        Log.d("VoiceService", "Direct deterministic command recognized from one-breath speech: $directAction")
-                        wakeScreen()
-                        handleAIAction(directAction)
-                    } else {
-                        // Ambient sound, TV, or unrecognized speech: stay completely silent
-                        Log.d("VoiceService", "No wake word or direct command in '$recognizedText'. Remaining silent.")
-                        resumeBackgroundListening()
-                    }
+                    // Never execute a command unless the transcript contains the wake
+                    // phrase. Ambient speech and TV audio must not trigger phone actions.
+                    Log.d("VoiceService", "No wake word found in '$recognizedText'. Remaining silent.")
+                    resumeBackgroundListening()
                 }
             },
             onError = { errorCode, errorMessage ->
@@ -275,7 +268,7 @@ class LockScreenVoiceService : Service() {
         }, 300L)
     }
 
-    private fun handleAIAction(action: AIAction) {
+    private suspend fun handleAIAction(action: AIAction) {
         Log.d("VoiceService", "Executing handleAIAction: $action")
         wakeScreen()
         when (action) {

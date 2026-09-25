@@ -44,7 +44,7 @@ class OpenAiProvider(private val client: OkHttpClient) {
                 "type": "function",
                 "function": {
                     "name": "send_whatsapp",
-                    "description": "Send a WhatsApp message to a contact",
+                    "description": "Open the exact contact's WhatsApp chat with a prefilled message draft; the user reviews and sends it",
                     "strict": true,
                     "parameters": {
                         "type": "object",
@@ -116,7 +116,7 @@ class OpenAiProvider(private val client: OkHttpClient) {
                         "properties": {
                             "command": {
                                 "type": "string",
-                                "enum": ["HOME", "BACK", "SCREENSHOT", "NOTIFICATIONS", "LOCK", "SCROLL_DOWN", "SCROLL_UP"],
+                                "enum": ["HOME", "BACK", "SCREENSHOT", "NOTIFICATIONS", "LOCK", "SCROLL_DOWN", "SCROLL_UP", "VOLUME_UP", "VOLUME_DOWN", "VOLUME_MUTE", "VOLUME_UNMUTE", "MEDIA_PAUSE", "MEDIA_PLAY"],
                                 "description": "The hardware navigation command"
                             },
                             "speech": {
