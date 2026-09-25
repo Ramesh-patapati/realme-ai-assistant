@@ -55,9 +55,32 @@ class WhatsAppNotificationService : NotificationListenerService() {
         val announcement = "New $appLabel from $sender: $message. Would you like to reply?"
 
         mainHandler.post {
+            pauseVoiceService()
             ttsManager.speak(announcement) {
                 listenForVoiceReply(sbn, sender)
             }
+        }
+    }
+
+    private fun pauseVoiceService() {
+        try {
+            val intent = Intent(this, LockScreenVoiceService::class.java).apply {
+                action = LockScreenVoiceService.ACTION_PAUSE_LISTENING
+            }
+            startService(intent)
+        } catch (e: Exception) {
+            Log.w("NotificationService", "Failed to pause voice service: ${e.message}")
+        }
+    }
+
+    private fun resumeVoiceService() {
+        try {
+            val intent = Intent(this, LockScreenVoiceService::class.java).apply {
+                action = LockScreenVoiceService.ACTION_RESTART_LISTENING
+            }
+            startService(intent)
+        } catch (e: Exception) {
+            Log.w("NotificationService", "Failed to resume voice service: ${e.message}")
         }
     }
 
@@ -67,21 +90,27 @@ class WhatsAppNotificationService : NotificationListenerService() {
                 onResult = { recognizedText ->
                     val lower = recognizedText.lowercase()
                     if (lower in listOf("no", "stop", "close", "cancel", "never mind", "don't reply")) {
-                        ttsManager.speak("Understood, closing now.")
+                        ttsManager.speak("Understood, closing now.") {
+                            resumeVoiceService()
+                        }
                     } else {
                         val replyText = recognizedText.removePrefix("reply").removePrefix("say").trim()
                         val sent = sendQuickReply(sbn, replyText)
-                        if (sent) {
-                            ttsManager.speak("Replied to $sender: $replyText")
+                        val confirmation = if (sent) {
+                            "Replied to $sender: $replyText"
                         } else {
-                            ttsManager.speak("Could not send reply directly.")
+                            "Could not send reply directly."
+                        }
+                        ttsManager.speak(confirmation) {
+                            resumeVoiceService()
                         }
                     }
                 },
                 onError = {
                     Log.d("NotificationService", "No reply spoken")
-                    // Announce closure politely instead of hanging in silence
-                    ttsManager.speak("No reply detected, closing for now.")
+                    ttsManager.speak("No reply detected, closing for now.") {
+                        resumeVoiceService()
+                    }
                 }
             )
         }, 300)

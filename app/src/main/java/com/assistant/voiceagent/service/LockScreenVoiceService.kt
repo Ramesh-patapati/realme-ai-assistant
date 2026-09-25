@@ -42,6 +42,7 @@ class LockScreenVoiceService : Service() {
         const val NOTIFICATION_ID = 1001
         const val ACTION_TRIGGER_VOICE_COMMAND = "com.assistant.voiceagent.TRIGGER_VOICE"
         const val ACTION_RESTART_LISTENING = "com.assistant.voiceagent.RESTART_LISTENING"
+        const val ACTION_PAUSE_LISTENING = "com.assistant.voiceagent.PAUSE_LISTENING"
     }
 
     override fun onCreate() {
@@ -82,6 +83,12 @@ class LockScreenVoiceService : Service() {
             }
             ACTION_RESTART_LISTENING -> {
                 resumeBackgroundListening()
+            }
+            ACTION_PAUSE_LISTENING -> {
+                isBusy = true
+                voiceDetector.pause()
+                speechInputManager.destroyRecognizer()
+                Log.d("VoiceService", "Voice service paused by external notification service")
             }
             "com.assistant.voiceagent.TEST_COMMAND" -> {
                 val command = intent.getStringExtra("command") ?: "What is the capital of India?"
