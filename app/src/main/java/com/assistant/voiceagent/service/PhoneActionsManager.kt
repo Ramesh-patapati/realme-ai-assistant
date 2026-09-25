@@ -3,9 +3,11 @@ package com.assistant.voiceagent.service
 import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.database.Cursor
 import android.net.Uri
+import android.os.BatteryManager
 import android.provider.ContactsContract
 import android.provider.Settings
 import android.util.Log
@@ -120,7 +122,36 @@ class PhoneActionsManager(private val context: Context) {
         }
     }
 
+    fun getBatteryStatus(): String {
+        return try {
+            val batteryFilter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
+            val batteryStatus: Intent? = context.registerReceiver(null, batteryFilter)
+            val level = batteryStatus?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+            val scale = batteryStatus?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
+            val status = batteryStatus?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
+            val isCharging = status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL
+
+            val batteryPct = if (level >= 0 && scale > 0) (level * 100) / scale else -1
+            if (batteryPct >= 0) {
+                if (isCharging) {
+                    "Your battery is at $batteryPct percent and currently charging."
+                } else {
+                    "Your battery is at $batteryPct percent."
+                }
+            } else {
+                "I couldn't read the battery level."
+            }
+        } catch (e: Exception) {
+            Log.e("PhoneActions", "Error checking battery", e)
+            "I couldn't read the battery level."
+        }
+    }
+
     fun executeDeviceControl(command: String): ActionResult {
+        if (command.equals("BATTERY", ignoreCase = true)) {
+            return ActionResult.Success(getBatteryStatus())
+        }
+
         val service = AgentAccessibilityService.instance
         if (service == null) {
             val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {

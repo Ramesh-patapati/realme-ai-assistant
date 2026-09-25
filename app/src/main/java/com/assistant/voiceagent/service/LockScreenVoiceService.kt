@@ -269,7 +269,8 @@ class LockScreenVoiceService : Service() {
                 val result = phoneActionsManager.executeDeviceControl(action.command)
                 when (result) {
                     is PhoneActionsManager.ActionResult.Success -> {
-                        speakAndResume(action.speech)
+                        val speechText = action.speech.ifBlank { result.message }
+                        speakAndResume(speechText)
                     }
                     is PhoneActionsManager.ActionResult.PermissionNeeded -> {
                         speakAndResume(result.spokenExplanation) {

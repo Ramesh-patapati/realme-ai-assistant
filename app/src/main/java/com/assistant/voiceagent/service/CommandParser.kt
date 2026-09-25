@@ -57,6 +57,19 @@ object CommandParser {
             return AIAction.Answer("Today is $date.")
         }
 
+        // Battery Status Queries (< 1ms offline response)
+        if (clean in listOf(
+                "what is my battery", "what is my battery percentage", "what is the battery percentage",
+                "what's my battery", "what's the battery", "battery status", "battery level",
+                "battery percentage", "check battery", "how much battery do i have", "how much battery is left",
+                "what is battery level", "battery"
+            ) || clean.startsWith("battery status") || clean.startsWith("battery level") ||
+            clean.contains("how much battery") || clean.contains("battery percentage") ||
+            clean == "my battery" || clean == "battery"
+        ) {
+            return AIAction.DeviceControl("BATTERY", "")
+        }
+
         // 2. Exact Navigation & System Controls
         when (clean) {
             "go home", "home", "home screen", "open home" -> return AIAction.DeviceControl("HOME", "Going to home screen")
