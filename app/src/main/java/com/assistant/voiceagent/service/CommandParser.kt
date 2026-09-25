@@ -176,18 +176,16 @@ object CommandParser {
                 .removePrefix("launch ")
                 .removePrefix("start ")
                 .trim()
-            if (app == "youtube") {
-                return AIAction.PlayYouTube("")
-            } else if (app.isNotBlank() && !app.contains(" and ") && !app.contains(" message ") && !app.contains(" saying ")) {
-                return AIAction.OpenApp(app)
+            if (app.isNotBlank() && !app.contains(" and ") && !app.contains(" message ") && !app.contains(" saying ")) {
+                return AIAction.OpenApp(normalizeAppName(app))
             }
         }
 
         // Exact 1-word app names
         when (clean) {
-            "whatsapp" -> return AIAction.OpenApp("whatsapp")
+            "whatsapp", "whats app", "whats up", "what's up", "what's app" -> return AIAction.OpenApp("whatsapp")
             "camera" -> return AIAction.OpenApp("camera")
-            "youtube" -> return AIAction.PlayYouTube("")
+            "youtube", "you tube" -> return AIAction.OpenApp("youtube")
             "settings" -> return AIAction.OpenApp("settings")
             "chrome", "browser" -> return AIAction.OpenApp("chrome")
             "maps" -> return AIAction.OpenApp("maps")
@@ -195,6 +193,18 @@ object CommandParser {
         }
 
         return null
+    }
+
+    private fun normalizeAppName(appName: String): String {
+        val normalized = appName.lowercase(Locale.ROOT)
+            .replace(Regex("[^a-z0-9 ]"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+        return when (normalized) {
+            "whatsapp", "whats app", "whats up", "what s up", "what s app" -> "whatsapp"
+            "you tube" -> "youtube"
+            else -> normalized
+        }
     }
 
     private fun formatName(name: String): String {

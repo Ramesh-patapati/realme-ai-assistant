@@ -268,6 +268,34 @@ class LockScreenVoiceService : Service() {
         }, 300L)
     }
 
+    private fun openSettingsSafely(intent: Intent) {
+        val settingsPendingIntent = PendingIntent.getActivity(
+            this,
+            1002,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val settingsNotification = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle("Jarvis needs a permission")
+            .setContentText("Tap to open Android settings and allow the requested access.")
+            .setContentIntent(settingsPendingIntent)
+            .setAutoCancel(true)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .build()
+        try {
+            getSystemService(NotificationManager::class.java).notify(1002, settingsNotification)
+        } catch (e: SecurityException) {
+            Log.w("VoiceService", "Could not show the permission notification", e)
+        }
+
+        try {
+            startActivity(intent)
+        } catch (e: Exception) {
+            Log.w("VoiceService", "Settings launch needs a tap on the Jarvis notification", e)
+        }
+    }
+
     private suspend fun handleAIAction(action: AIAction) {
         Log.d("VoiceService", "Executing handleAIAction: $action")
         wakeScreen()
@@ -293,7 +321,7 @@ class LockScreenVoiceService : Service() {
                     }
                     is PhoneActionsManager.ActionResult.PermissionNeeded -> {
                         speakAndResume(result.spokenExplanation) {
-                            startActivity(result.settingsIntent)
+                            openSettingsSafely(result.settingsIntent)
                         }
                     }
                     is PhoneActionsManager.ActionResult.Failure -> {
@@ -311,7 +339,7 @@ class LockScreenVoiceService : Service() {
                     }
                     is PhoneActionsManager.ActionResult.PermissionNeeded -> {
                         speakAndResume(result.spokenExplanation) {
-                            startActivity(result.settingsIntent)
+                            openSettingsSafely(result.settingsIntent)
                         }
                     }
                     is PhoneActionsManager.ActionResult.Failure -> {
@@ -321,15 +349,22 @@ class LockScreenVoiceService : Service() {
             }
 
             is AIAction.PlayYouTube -> {
-                speakAndResume("Playing ${action.songOrQuery} on YouTube") {
-                    phoneActionsManager.playYouTube(action.songOrQuery)
+                when (val result = phoneActionsManager.playYouTube(action.songOrQuery)) {
+                    is PhoneActionsManager.ActionResult.Success -> speakAndResume(result.message)
+                    is PhoneActionsManager.ActionResult.Failure -> speakAndResume(result.reason)
+                    is PhoneActionsManager.ActionResult.PermissionNeeded -> {
+                        speakAndResume(result.spokenExplanation) { openSettingsSafely(result.settingsIntent) }
+                    }
                 }
             }
 
             is AIAction.OrderFood -> {
-                val restaurantText = if (action.restaurant != null) " from ${action.restaurant}" else ""
-                speakAndResume("Opening Zomato for ${action.item}$restaurantText") {
-                    phoneActionsManager.openZomato(action.item, action.restaurant)
+                when (val result = phoneActionsManager.openZomato(action.item, action.restaurant)) {
+                    is PhoneActionsManager.ActionResult.Success -> speakAndResume(result.message)
+                    is PhoneActionsManager.ActionResult.Failure -> speakAndResume(result.reason)
+                    is PhoneActionsManager.ActionResult.PermissionNeeded -> {
+                        speakAndResume(result.spokenExplanation) { openSettingsSafely(result.settingsIntent) }
+                    }
                 }
             }
 
@@ -344,15 +379,19 @@ class LockScreenVoiceService : Service() {
                     }
                     is PhoneActionsManager.ActionResult.PermissionNeeded -> {
                         speakAndResume(result.spokenExplanation) {
-                            startActivity(result.settingsIntent)
+                            openSettingsSafely(result.settingsIntent)
                         }
                     }
                 }
             }
 
             is AIAction.OpenApp -> {
-                speakAndResume("Opening ${action.appName}") {
-                    phoneActionsManager.openApp(action.appName)
+                when (val result = phoneActionsManager.openApp(action.appName)) {
+                    is PhoneActionsManager.ActionResult.Success -> speakAndResume(result.message)
+                    is PhoneActionsManager.ActionResult.Failure -> speakAndResume(result.reason)
+                    is PhoneActionsManager.ActionResult.PermissionNeeded -> {
+                        speakAndResume(result.spokenExplanation) { openSettingsSafely(result.settingsIntent) }
+                    }
                 }
             }
 

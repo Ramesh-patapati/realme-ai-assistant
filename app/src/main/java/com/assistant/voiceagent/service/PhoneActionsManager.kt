@@ -1,16 +1,20 @@
 package com.assistant.voiceagent.service
 
 import android.Manifest
+import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.media.AudioManager
 import android.net.Uri
+import android.os.Build
+import android.os.Bundle
 import android.os.SystemClock
 import android.os.BatteryManager
 import android.provider.ContactsContract
 import android.provider.Settings
+import android.telecom.TelecomManager
 import android.util.Log
 import android.view.KeyEvent
 import androidx.core.content.ContextCompat
@@ -61,11 +65,16 @@ class PhoneActionsManager(private val context: Context) {
         }
 
         return try {
-            val callIntent = Intent(Intent.ACTION_CALL).apply {
-                data = Uri.fromParts("tel", phoneNumber, null)
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            val telecomManager = context.getSystemService(Context.TELECOM_SERVICE) as? TelecomManager
+            if (telecomManager != null) {
+                telecomManager.placeCall(Uri.fromParts("tel", phoneNumber, null), Bundle())
+            } else {
+                val callIntent = Intent(Intent.ACTION_CALL).apply {
+                    data = Uri.fromParts("tel", phoneNumber, null)
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                context.startActivity(callIntent)
             }
-            context.startActivity(callIntent)
             ActionResult.Success("Calling $target")
         } catch (e: Exception) {
             Log.e("PhoneActions", "Failed to initiate call", e)
@@ -285,36 +294,41 @@ class PhoneActionsManager(private val context: Context) {
         )
     }
 
-    fun playYouTube(query: String) {
-        try {
-            val intent = Intent(Intent.ACTION_SEARCH).apply {
-                setPackage("com.google.android.youtube")
-                putExtra("query", query)
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            }
-            context.startActivity(intent)
-        } catch (e: Exception) {
-            val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/results?search_query=${Uri.encode(query)}")).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            }
-            context.startActivity(webIntent)
+    fun playYouTube(query: String): ActionResult {
+        val cleanedQuery = query.trim()
+        if (cleanedQuery.isBlank()) return openApp("youtube")
+
+        val youtubeIntent = Intent(Intent.ACTION_SEARCH).apply {
+            setPackage("com.google.android.youtube")
+            putExtra("query", cleanedQuery)
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
         }
+        val launchResult = startActivityResult(youtubeIntent, "Playing $cleanedQuery on YouTube")
+        if (launchResult is ActionResult.Success || launchResult is ActionResult.PermissionNeeded) {
+            return launchResult
+        }
+
+        val webIntent = Intent(
+            Intent.ACTION_VIEW,
+            Uri.parse("https://www.youtube.com/results?search_query=${Uri.encode(cleanedQuery)}")
+        ).apply { flags = Intent.FLAG_ACTIVITY_NEW_TASK }
+        return startActivityResult(webIntent, "Opening YouTube results for $cleanedQuery")
     }
 
-    fun openZomato(dish: String, restaurant: String?) {
+    fun openZomato(dish: String, restaurant: String?): ActionResult {
         val searchTerm = if (restaurant != null) "$dish $restaurant" else dish
-        try {
-            val intent = Intent(Intent.ACTION_VIEW).apply {
-                data = Uri.parse("zomato://search?q=${Uri.encode(searchTerm)}")
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            }
-            context.startActivity(intent)
-        } catch (e: Exception) {
-            val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.zomato.com/search?q=${Uri.encode(searchTerm)}")).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            }
-            context.startActivity(webIntent)
+        val appIntent = Intent(Intent.ACTION_VIEW).apply {
+            data = Uri.parse("zomato://search?q=${Uri.encode(searchTerm)}")
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
         }
+        val appResult = startActivityResult(appIntent, "Opening Zomato for $searchTerm")
+        if (appResult is ActionResult.Success || appResult is ActionResult.PermissionNeeded) return appResult
+
+        val webIntent = Intent(
+            Intent.ACTION_VIEW,
+            Uri.parse("https://www.zomato.com/search?q=${Uri.encode(searchTerm)}")
+        ).apply { flags = Intent.FLAG_ACTIVITY_NEW_TASK }
+        return startActivityResult(webIntent, "Opening search results for $searchTerm")
     }
 
     suspend fun sendWhatsApp(contactName: String, message: String): ActionResult {
@@ -346,61 +360,65 @@ class PhoneActionsManager(private val context: Context) {
             return ActionResult.Failure("The phone number for $recipient doesn't look valid for WhatsApp.")
         }
 
-        return try {
-            val uri = Uri.parse("https://api.whatsapp.com/send?phone=$waNumber&text=${Uri.encode(message)}")
-            val intent = Intent(Intent.ACTION_VIEW, uri).apply {
-                setPackage("com.whatsapp")
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            }
-            context.startActivity(intent)
-            ActionResult.Success("Opened a WhatsApp draft for $recipient. Review it and tap send.")
-        } catch (e: Exception) {
-            Log.e("PhoneActions", "Failed to open WhatsApp draft for $recipient", e)
-            ActionResult.Failure("I couldn't open WhatsApp for $recipient.")
+        val uri = Uri.parse("https://api.whatsapp.com/send?phone=$waNumber&text=${Uri.encode(message)}")
+        val whatsappPackage = when {
+            context.packageManager.getLaunchIntentForPackage("com.whatsapp") != null -> "com.whatsapp"
+            context.packageManager.getLaunchIntentForPackage("com.whatsapp.w4b") != null -> "com.whatsapp.w4b"
+            else -> "com.whatsapp"
         }
+        val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+            setPackage(whatsappPackage)
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        return startActivityResult(intent, "Opened a WhatsApp draft for $recipient. Review it and tap send.")
     }
 
     fun openApp(appName: String): ActionResult {
-        val cleanName = appName.trim().lowercase()
+        val cleanName = normalizeAppName(appName)
         val pm = context.packageManager
 
         val packageMap = mapOf(
-            "whatsapp" to "com.whatsapp",
-            "youtube" to "com.google.android.youtube",
-            "chrome" to "com.android.chrome",
-            "browser" to "com.android.chrome",
-            "camera" to "com.oppo.camera",
-            "settings" to "com.android.settings",
-            "maps" to "com.google.android.apps.maps",
-            "gmail" to "com.google.android.gm",
-            "play store" to "com.android.vending",
-            "instagram" to "com.instagram.android",
-            "zomato" to "com.application.zomato",
-            "swiggy" to "in.swiggy.android",
-            "paytm" to "net.one97.paytm",
-            "phonepe" to "com.phonepe.app"
+            "whatsapp" to listOf("com.whatsapp"),
+            "youtube" to listOf("com.google.android.youtube"),
+            "chrome" to listOf("com.android.chrome"),
+            "browser" to listOf("com.android.chrome"),
+            "camera" to listOf("com.oppo.camera", "com.oplus.camera", "com.android.camera2"),
+            "settings" to listOf("com.android.settings"),
+            "maps" to listOf("com.google.android.apps.maps"),
+            "gmail" to listOf("com.google.android.gm"),
+            "play store" to listOf("com.android.vending"),
+            "instagram" to listOf("com.instagram.android"),
+            "zomato" to listOf("com.application.zomato"),
+            "swiggy" to listOf("in.swiggy.android"),
+            "paytm" to listOf("net.one97.paytm"),
+            "phonepe" to listOf("com.phonepe.app")
         )
 
-        val targetPkg = packageMap[cleanName]
-        if (targetPkg != null) {
+        for (targetPkg in packageMap[cleanName].orEmpty()) {
             val intent = pm.getLaunchIntentForPackage(targetPkg)
             if (intent != null) {
-                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                context.startActivity(intent)
-                return ActionResult.Success("Opening $appName")
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                return startActivityResult(intent, "Opening $cleanName")
             }
+        }
+
+        if (cleanName == "camera") {
+            val cameraIntent = Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            val result = startActivityResult(cameraIntent, "Opening camera")
+            if (result is ActionResult.Success || result is ActionResult.PermissionNeeded) return result
         }
 
         try {
             val packages = pm.getInstalledApplications(PackageManager.GET_META_DATA)
             for (app in packages) {
-                val label = pm.getApplicationLabel(app).toString().lowercase()
-                if (label == cleanName || label.contains(cleanName)) {
+                val label = normalizeAppName(pm.getApplicationLabel(app).toString())
+                if (label == cleanName) {
                     val intent = pm.getLaunchIntentForPackage(app.packageName)
                     if (intent != null) {
-                        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                        context.startActivity(intent)
-                        return ActionResult.Success("Opening $appName")
+                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        return startActivityResult(intent, "Opening $cleanName")
                     }
                 }
             }
@@ -409,5 +427,58 @@ class PhoneActionsManager(private val context: Context) {
         }
 
         return ActionResult.Failure("I could not find $appName on your phone.")
+    }
+
+    private fun normalizeAppName(name: String): String {
+        val normalized = name.lowercase()
+            .replace(Regex("[^a-z0-9 ]"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+        return when (normalized) {
+            "whats app", "whats up", "what s app", "what s up" -> "whatsapp"
+            "you tube" -> "youtube"
+            else -> normalized
+        }
+    }
+
+    private fun startActivityResult(intent: Intent, successMessage: String): ActionResult {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
+            !Settings.canDrawOverlays(context) &&
+            !hasVisibleAppActivity()
+        ) {
+            val overlaySettings = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
+                data = Uri.parse("package:${context.packageName}")
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            return ActionResult.PermissionNeeded(
+                "Android blocks Jarvis from opening apps while it runs in the background. Enable Display over other apps for Jarvis, then try again.",
+                overlaySettings
+            )
+        }
+
+        return try {
+            context.startActivity(intent)
+            ActionResult.Success(successMessage)
+        } catch (e: Exception) {
+            Log.e("PhoneActions", "Failed to launch activity ${intent.action}", e)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(context)) {
+                val overlaySettings = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
+                    data = Uri.parse("package:${context.packageName}")
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                ActionResult.PermissionNeeded(
+                    "Android blocked opening that app in the background. Allow Display over other apps for Jarvis in settings, then try again.",
+                    overlaySettings
+                )
+            } else {
+                ActionResult.Failure("Android blocked opening the requested app. Please unlock your phone and try again.")
+            }
+        }
+    }
+
+    private fun hasVisibleAppActivity(): Boolean {
+        val processInfo = ActivityManager.RunningAppProcessInfo()
+        ActivityManager.getMyMemoryState(processInfo)
+        return processInfo.importance <= ActivityManager.RunningAppProcessInfo.IMPORTANCE_VISIBLE
     }
 }
