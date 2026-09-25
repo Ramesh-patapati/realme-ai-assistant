@@ -363,6 +363,14 @@
                     android:text="Grant Microphone &amp; Phone Permissions" />
 
                 <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnOverlayPermission"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:backgroundTint="@color/card_bg_light"
+                    android:text="Allow Background App Launches" />
+
+                <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnNotificationAccess"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"

@@ -21,7 +21,7 @@ class GeminiProvider(private val client: OkHttpClient) {
     private val geminiModels = listOf(
         "gemini-2.5-flash",
         "gemini-2.0-flash",
-        "gemini-1.5-flash",
+        "gemini-1.5-flash"
     )
 
     private val systemInstruction = """

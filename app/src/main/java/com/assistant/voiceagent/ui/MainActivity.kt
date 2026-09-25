@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
@@ -17,6 +18,8 @@ import com.assistant.voiceagent.service.LockScreenVoiceService
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
+    private var pendingServiceStart = false
+    private var pendingServiceAction: String? = null
 
     private val requestPermissionsLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -24,7 +27,15 @@ class MainActivity : AppCompatActivity() {
         val allGranted = permissions.entries.all { it.value }
         if (allGranted) {
             Toast.makeText(this, "All permissions granted!", Toast.LENGTH_SHORT).show()
+            if (pendingServiceStart) {
+                val action = pendingServiceAction
+                pendingServiceStart = false
+                pendingServiceAction = null
+                startVoiceService(action)
+            }
         } else {
+            pendingServiceStart = false
+            pendingServiceAction = null
             Toast.makeText(this, "Permissions needed for voice and phone actions", Toast.LENGTH_SHORT).show()
         }
     }
@@ -66,29 +77,14 @@ class MainActivity : AppCompatActivity() {
         binding.etCustomWakeWord.setText(clean)
         Toast.makeText(this, "Wake phrase saved: '$clean'", Toast.LENGTH_SHORT).show()
 
-        // Notify background service to update phrase
-        val restartIntent = Intent(this, LockScreenVoiceService::class.java).apply {
-            action = LockScreenVoiceService.ACTION_RESTART_LISTENING
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(restartIntent)
-        } else {
-            startService(restartIntent)
-        }
+        // Notify/start the service through the same permission gate as the other buttons.
+        startVoiceService(LockScreenVoiceService.ACTION_RESTART_LISTENING)
     }
 
     private fun setupListeners() {
         // Quick Talk to Jarvis Button
         binding.btnQuickTalk.setOnClickListener {
-            val triggerIntent = Intent(this, LockScreenVoiceService::class.java).apply {
-                action = LockScreenVoiceService.ACTION_TRIGGER_VOICE_COMMAND
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForegroundService(triggerIntent)
-            } else {
-                startService(triggerIntent)
-            }
-            Toast.makeText(this, "Listening for your command...", Toast.LENGTH_SHORT).show()
+            startVoiceService(LockScreenVoiceService.ACTION_TRIGGER_VOICE_COMMAND)
         }
 
         // Preset Wake Word Buttons
@@ -127,14 +123,7 @@ class MainActivity : AppCompatActivity() {
 
         // Restart Background Service
         binding.btnToggleService.setOnClickListener {
-            val serviceIntent = Intent(this, LockScreenVoiceService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForegroundService(serviceIntent)
-            } else {
-                startService(serviceIntent)
-            }
-            binding.tvServiceStatus.text = "● Service: Active & Listening"
-            Toast.makeText(this, "Jarvis background service restarted", Toast.LENGTH_SHORT).show()
+            startVoiceService(null)
         }
 
         // Permissions
@@ -148,6 +137,10 @@ class MainActivity : AppCompatActivity() {
 
         binding.btnAccessibility.setOnClickListener {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        }
+
+        binding.btnOverlayPermission.setOnClickListener {
+            openOverlayPermissionSettings()
         }
 
         binding.btnBatterySettings.setOnClickListener {
@@ -165,5 +158,62 @@ class MainActivity : AppCompatActivity() {
             permissions.add(Manifest.permission.POST_NOTIFICATIONS)
         }
         requestPermissionsLauncher.launch(permissions.toTypedArray())
+    }
+
+    private fun startVoiceService(action: String?) {
+        val required = mutableListOf(Manifest.permission.RECORD_AUDIO)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            required += Manifest.permission.POST_NOTIFICATIONS
+        }
+
+        val missing = required.filter {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isNotEmpty()) {
+            pendingServiceStart = true
+            pendingServiceAction = action
+            requestPermissionsLauncher.launch(missing.toTypedArray())
+            return
+        }
+
+        val serviceIntent = Intent(this, LockScreenVoiceService::class.java).apply {
+            this.action = action
+        }
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(serviceIntent)
+            } else {
+                startService(serviceIntent)
+            }
+            binding.tvServiceStatus.text = "● Service: Active & Listening"
+            Toast.makeText(
+                this,
+                if (action == LockScreenVoiceService.ACTION_TRIGGER_VOICE_COMMAND) {
+                    "Listening for your command..."
+                } else {
+                    "Jarvis background service started"
+                },
+                Toast.LENGTH_SHORT
+            ).show()
+        } catch (e: Exception) {
+            binding.tvServiceStatus.text = "● Service: Not running"
+            Toast.makeText(this, "Could not start Jarvis: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun openOverlayPermissionSettings() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(this)) {
+            Toast.makeText(this, "Background app-launch permission is already enabled", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
+            data = Uri.parse("package:$packageName")
+        }
+        try {
+            startActivity(intent)
+        } catch (e: Exception) {
+            Toast.makeText(this, "Open Android Settings and allow Display over other apps for Jarvis", Toast.LENGTH_LONG).show()
+        }
     }
 }
