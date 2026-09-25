@@ -163,9 +163,18 @@ class LockScreenVoiceService : Service() {
                         }
                     }
                 } else {
-                    // False positive: background noise, talking, TV, or music without "Hey Jarvis"
-                    Log.d("VoiceService", "No wake word found in '$recognizedText'. Remaining silent.")
-                    resumeBackgroundListening()
+                    // One-breath fallback: if speech recognizer started late and missed "Hey Jarvis",
+                    // but caught a clear deterministic command (e.g. "what is my battery", "call Mom", "pause music"):
+                    val directAction = CommandParser.parseDeterministic(recognizedText)
+                    if (directAction != null && directAction !is AIAction.Unknown && directAction !is AIAction.Clarify) {
+                        Log.d("VoiceService", "Direct deterministic command recognized from one-breath speech: $directAction")
+                        wakeScreen()
+                        handleAIAction(directAction)
+                    } else {
+                        // Ambient sound, TV, or unrecognized speech: stay completely silent
+                        Log.d("VoiceService", "No wake word or direct command in '$recognizedText'. Remaining silent.")
+                        resumeBackgroundListening()
+                    }
                 }
             },
             onError = { errorCode, errorMessage ->
@@ -332,13 +341,19 @@ class LockScreenVoiceService : Service() {
             }
 
             is AIAction.SendWhatsApp -> {
-                val speechText = if (action.message.isNotBlank()) {
-                    "Opening WhatsApp with message for ${action.contactName}"
-                } else {
-                    "Opening WhatsApp chat with ${action.contactName}"
-                }
-                speakAndResume(speechText) {
-                    phoneActionsManager.sendWhatsApp(action.contactName, action.message)
+                val result = phoneActionsManager.sendWhatsApp(action.contactName, action.message)
+                when (result) {
+                    is PhoneActionsManager.ActionResult.Success -> {
+                        speakAndResume(result.message)
+                    }
+                    is PhoneActionsManager.ActionResult.Failure -> {
+                        speakAndResume(result.reason)
+                    }
+                    is PhoneActionsManager.ActionResult.PermissionNeeded -> {
+                        speakAndResume(result.spokenExplanation) {
+                            startActivity(result.settingsIntent)
+                        }
+                    }
                 }
             }
 

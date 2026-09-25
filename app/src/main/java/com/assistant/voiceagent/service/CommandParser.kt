@@ -33,6 +33,11 @@ object CommandParser {
             }
         }
 
+        // Catch stop words even if preceded by wake word or fillers (e.g. "Hey Jarvis, stop")
+        if (clean in STOP_WORDS) {
+            return AIAction.Stop
+        }
+
         // Unbundle compound prefixes like "open whatsapp and ...", "open youtube and ..."
         if (clean.startsWith("open whatsapp and ") || clean.startsWith("launch whatsapp and ")) {
             val prefix = if (clean.startsWith("open whatsapp and ")) "open whatsapp and" else "launch whatsapp and"

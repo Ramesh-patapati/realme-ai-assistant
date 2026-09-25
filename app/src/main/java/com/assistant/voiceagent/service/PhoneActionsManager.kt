@@ -93,9 +93,21 @@ class PhoneActionsManager(private val context: Context) {
             cursor = context.contentResolver.query(filterUri, projection, null, null, null)
             if (cursor != null && cursor.moveToFirst()) {
                 val numberIndex = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
-                val number = cursor.getString(numberIndex)
-                if (!number.isNullOrBlank()) {
-                    return FindResult.Found(number)
+                val nameIndex = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
+                var fallbackNumber: String? = null
+                do {
+                    val displayName = if (nameIndex >= 0) cursor.getString(nameIndex) else ""
+                    val number = if (numberIndex >= 0) cursor.getString(numberIndex) else ""
+                    if (displayName.equals(cleanName, ignoreCase = true) && !number.isNullOrBlank()) {
+                        return FindResult.Found(number)
+                    }
+                    if (fallbackNumber == null && !number.isNullOrBlank()) {
+                        fallbackNumber = number
+                    }
+                } while (cursor.moveToNext())
+
+                if (!fallbackNumber.isNullOrBlank()) {
+                    return FindResult.Found(fallbackNumber)
                 }
             }
         } catch (e: Exception) {
@@ -113,7 +125,24 @@ class PhoneActionsManager(private val context: Context) {
             cursor = context.contentResolver.query(uri, projection, selection, selectionArgs, null)
             if (cursor != null && cursor.moveToFirst()) {
                 val numberIndex = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
-                FindResult.Found(cursor.getString(numberIndex))
+                val nameIndex = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
+                var fallbackNumber: String? = null
+                do {
+                    val displayName = if (nameIndex >= 0) cursor.getString(nameIndex) else ""
+                    val number = if (numberIndex >= 0) cursor.getString(numberIndex) else ""
+                    if (displayName.equals(cleanName, ignoreCase = true) && !number.isNullOrBlank()) {
+                        return FindResult.Found(number)
+                    }
+                    if (fallbackNumber == null && !number.isNullOrBlank()) {
+                        fallbackNumber = number
+                    }
+                } while (cursor.moveToNext())
+
+                if (!fallbackNumber.isNullOrBlank()) {
+                    FindResult.Found(fallbackNumber)
+                } else {
+                    FindResult.NotFound
+                }
             } else {
                 FindResult.NotFound
             }
@@ -296,34 +325,57 @@ class PhoneActionsManager(private val context: Context) {
         }
     }
 
-    fun sendWhatsApp(contactName: String, message: String) {
+    fun sendWhatsApp(contactName: String, message: String): ActionResult {
         val phoneNumber = if (contactName.matches(Regex("^[0-9+ ]+$"))) {
             contactName.replace(" ", "")
         } else {
             val found = findPhoneNumberByName(contactName)
-            if (found is FindResult.Found) found.number.replace(" ", "") else ""
+            when (found) {
+                is FindResult.Found -> found.number.replace(" ", "")
+                is FindResult.PermissionNeeded -> {
+                    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                        data = Uri.fromParts("package", context.packageName, null)
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    }
+                    return ActionResult.PermissionNeeded(
+                        "I need permission to read your contacts to message $contactName on WhatsApp.",
+                        intent
+                    )
+                }
+                is FindResult.NotFound -> {
+                    return ActionResult.Failure("I could not find $contactName in your contacts.")
+                }
+            }
         }
 
-        try {
+        return try {
             val cleanNumber = phoneNumber.replace("+", "").trim()
-            val uri = if (cleanNumber.isNotBlank()) {
-                Uri.parse("https://api.whatsapp.com/send?phone=$cleanNumber&text=${Uri.encode(message)}")
-            } else {
-                Uri.parse("https://api.whatsapp.com/send?text=${Uri.encode(message)}")
-            }
+            val uri = Uri.parse("https://api.whatsapp.com/send?phone=$cleanNumber&text=${Uri.encode(message)}")
             val intent = Intent(Intent.ACTION_VIEW, uri).apply {
                 setPackage("com.whatsapp")
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
             }
             context.startActivity(intent)
-        } catch (e: Exception) {
-            val sendIntent = Intent(Intent.ACTION_SEND).apply {
-                type = "text/plain"
-                setPackage("com.whatsapp")
-                putExtra(Intent.EXTRA_TEXT, message)
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            val speech = if (message.isNotBlank()) {
+                "Opening WhatsApp with message for $contactName"
+            } else {
+                "Opening WhatsApp chat with $contactName"
             }
-            context.startActivity(sendIntent)
+            ActionResult.Success(speech)
+        } catch (e: Exception) {
+            try {
+                val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    setPackage("com.whatsapp")
+                    putExtra(Intent.EXTRA_TEXT, message)
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                context.startActivity(sendIntent)
+                ActionResult.Success("Opening WhatsApp")
+            } catch (ex: Exception) {
+                Log.e("PhoneActions", "Failed to launch WhatsApp", ex)
+                ActionResult.Failure("WhatsApp is not installed on this phone.")
+            }
         }
     }
 

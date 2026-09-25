@@ -70,9 +70,7 @@ class TtsManager(private val context: Context, private val onInitSuccess: (() ->
             pendingUtteranceCallbacks[utteranceId] = onDone
         }
 
-        val params = Bundle().apply {
-            putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f)
-        }
+        val params = Bundle()
 
         tts?.speak(text, TextToSpeech.QUEUE_FLUSH, params, utteranceId)
     }
