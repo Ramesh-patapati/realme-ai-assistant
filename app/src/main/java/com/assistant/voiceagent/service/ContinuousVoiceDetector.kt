@@ -31,7 +31,7 @@ class ContinuousVoiceDetector(
 
     // Adaptive noise threshold
     private var baselineEnergy = 400.0
-    private val consecutiveSpeechFramesNeeded = 4
+    private val consecutiveSpeechFramesNeeded = 2
 
     @SuppressLint("MissingPermission")
     fun startListening() {
@@ -91,13 +91,14 @@ class ContinuousVoiceDetector(
                             }
                             val rms = sqrt(sum / read)
 
-                            // Adapt ambient baseline slowly
+                            // Adapt ambient baseline slowly, clamp to realistic room noise [100.0, 750.0]
                             if (rms < baselineEnergy * 1.5) {
-                                baselineEnergy = (baselineEnergy * 0.95) + (rms * 0.05)
+                                baselineEnergy = ((baselineEnergy * 0.95) + (rms * 0.05)).coerceIn(100.0, 750.0)
                             }
 
-                            // Trigger threshold: 4.5x baseline and at least 2200.0 RMS (Room ambient is ~900-1200, Speech is 2800-4500)
-                            val triggerThreshold = (baselineEnergy * 4.5).coerceAtLeast(2200.0)
+                            // Trigger threshold: 2.2x baseline, bounded between 1100.0 and 2000.0 RMS
+                            // (Room ambient is ~300-800, Conversational speech is 1300-2800)
+                            val triggerThreshold = (baselineEnergy * 2.2).coerceIn(1100.0, 2000.0)
 
                             if (rms > triggerThreshold) {
                                 speechFramesCount++

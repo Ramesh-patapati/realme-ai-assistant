@@ -58,6 +58,7 @@ class TtsManager(private val context: Context, private val onInitSuccess: (() ->
     }
 
     fun speak(text: String, onDone: (() -> Unit)? = null) {
+        Log.d("TtsManager", "Speaking: '$text'")
         if (!isReady || tts == null) {
             Log.w("TtsManager", "TTS is not ready yet, queuing speech: $text")
             pendingSpeech = Pair(text, onDone)

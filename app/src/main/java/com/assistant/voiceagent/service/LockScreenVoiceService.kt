@@ -129,6 +129,7 @@ class LockScreenVoiceService : Service() {
     private fun onVoiceActivityDetected() {
         if (!isServiceRunning || isBusy) return
         isBusy = true
+        wakeScreen()
         Log.d("VoiceService", "Deliberate voice activity confirmed by AudioRecord! Prompting user...")
         voiceDetector.pause()
 
@@ -136,6 +137,21 @@ class LockScreenVoiceService : Service() {
             mainHandler.postDelayed({
                 listenForActiveCommand()
             }, 300L)
+        }
+    }
+
+    private fun wakeScreen() {
+        try {
+            val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+            @Suppress("DEPRECATION")
+            val screenLock = powerManager.newWakeLock(
+                PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP or PowerManager.ON_AFTER_RELEASE,
+                "AIAssistant:ScreenWakeLock"
+            )
+            screenLock.acquire(4000L)
+            Log.d("VoiceService", "Screen awakened from lock/doze state")
+        } catch (e: Exception) {
+            Log.w("VoiceService", "Could not wake screen: ${e.message}")
         }
     }
 
@@ -217,6 +233,7 @@ class LockScreenVoiceService : Service() {
 
     private fun handleAIAction(action: AIAction) {
         Log.d("VoiceService", "Executing handleAIAction: $action")
+        wakeScreen()
         when (action) {
             is AIAction.Stop -> {
                 speakAndResume("Stopping now. Let me know when you need me!")

@@ -75,15 +75,35 @@ class PhoneActionsManager(private val context: Context) {
             return FindResult.PermissionNeeded
         }
 
-        val uri = ContactsContract.CommonDataKinds.Phone.CONTENT_URI
+        val cleanName = name.trim()
         val projection = arrayOf(
             ContactsContract.CommonDataKinds.Phone.NUMBER,
             ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME
         )
-        val selection = "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ?"
-        val selectionArgs = arrayOf("%$name%")
 
+        // 1. First try Android's official CONTENT_FILTER_URI (case-insensitive phonetic & prefix matching)
         var cursor: Cursor? = null
+        try {
+            val filterUri = Uri.withAppendedPath(ContactsContract.CommonDataKinds.Phone.CONTENT_FILTER_URI, Uri.encode(cleanName))
+            cursor = context.contentResolver.query(filterUri, projection, null, null, null)
+            if (cursor != null && cursor.moveToFirst()) {
+                val numberIndex = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
+                val number = cursor.getString(numberIndex)
+                if (!number.isNullOrBlank()) {
+                    return FindResult.Found(number)
+                }
+            }
+        } catch (e: Exception) {
+            Log.w("PhoneActions", "CONTENT_FILTER_URI search failed for $cleanName, falling back to LIKE", e)
+        } finally {
+            cursor?.close()
+        }
+
+        // 2. Fallback to case-insensitive LIKE query
+        val uri = ContactsContract.CommonDataKinds.Phone.CONTENT_URI
+        val selection = "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ? COLLATE NOCASE"
+        val selectionArgs = arrayOf("%$cleanName%")
+
         return try {
             cursor = context.contentResolver.query(uri, projection, selection, selectionArgs, null)
             if (cursor != null && cursor.moveToFirst()) {
