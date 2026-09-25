@@ -112,7 +112,12 @@ class LockScreenVoiceService : Service() {
         if (cleanCustom.isNotBlank() && cleanCustom != "hey jarvis") {
             wakeWords.add(cleanCustom)
         }
-        wakeWords.addAll(listOf("hey jarvis", "ok jarvis", "hello jarvis", "jarvis", "hey assistant", "ok assistant", "hello assistant", "hey siri", "hello siri", "assistant"))
+        wakeWords.addAll(listOf(
+            "hey jarvis", "ok jarvis", "hello jarvis", "jarvis", "hi jarvis",
+            "hey javis", "javis", "jarves", "hey travis", "travis", "service", "hey service",
+            "harvest", "hey harvest", "service please",
+            "hey assistant", "ok assistant", "hello assistant", "hey siri", "hello siri", "assistant"
+        ))
 
         for (wake in wakeWords) {
             if (cleanSpeech == wake) {
@@ -260,9 +265,9 @@ class LockScreenVoiceService : Service() {
     private fun speakAndResume(text: String, onFinished: (() -> Unit)? = null) {
         speechInputManager.destroyRecognizer()
         ttsManager.speak(text) {
-            try {
-                onFinished?.invoke()
-            } finally {
+            if (onFinished != null) {
+                onFinished.invoke()
+            } else {
                 resumeBackgroundListening()
             }
         }

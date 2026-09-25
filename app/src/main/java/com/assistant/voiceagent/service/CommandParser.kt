@@ -214,9 +214,12 @@ object CommandParser {
             .replace(Regex("[^a-z0-9 ]"), " ")
             .replace(Regex("\\s+"), " ")
             .trim()
+            .removeSuffix(" app")
+            .removeSuffix(" application")
+            .trim()
         return when (normalized) {
-            "whatsapp", "whats app", "whats up", "what s up", "what s app" -> "whatsapp"
-            "you tube" -> "youtube"
+            "whatsapp", "whats app", "whats up", "what s up", "what s app", "whatsapp app" -> "whatsapp"
+            "you tube", "youtube", "youtube app" -> "youtube"
             else -> normalized
         }
     }

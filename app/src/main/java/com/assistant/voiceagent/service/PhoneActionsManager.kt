@@ -491,9 +491,12 @@ class PhoneActionsManager(private val context: Context) {
             .replace(Regex("[^a-z0-9 ]"), " ")
             .replace(Regex("\\s+"), " ")
             .trim()
+            .removeSuffix(" app")
+            .removeSuffix(" application")
+            .trim()
         return when (normalized) {
-            "whats app", "whats up", "what s app", "what s up" -> "whatsapp"
-            "you tube" -> "youtube"
+            "whats app", "whats up", "what s app", "what s up", "whatsapp", "whatsapp app" -> "whatsapp"
+            "you tube", "youtube", "youtube app" -> "youtube"
             else -> normalized
         }
     }
