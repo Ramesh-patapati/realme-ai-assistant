@@ -130,13 +130,6 @@ class LockScreenVoiceService : Service() {
     private fun onVoiceActivityDetected() {
         if (!isServiceRunning || isBusy) return
 
-        // 1. If music or media is actively playing through the device speakers, do not false-trigger
-        val audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
-        if (audioManager?.isMusicActive == true) {
-            Log.d("VoiceService", "Music is actively playing on device - ignoring ambient sound.")
-            return
-        }
-
         isBusy = true
         voiceDetector.pause()
         Log.d("VoiceService", "Audio energy detected. Starting silent wake-word verification...")

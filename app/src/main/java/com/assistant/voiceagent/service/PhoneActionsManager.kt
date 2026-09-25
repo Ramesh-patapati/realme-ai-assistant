@@ -6,11 +6,14 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.database.Cursor
+import android.media.AudioManager
 import android.net.Uri
+import android.os.SystemClock
 import android.os.BatteryManager
 import android.provider.ContactsContract
 import android.provider.Settings
 import android.util.Log
+import android.view.KeyEvent
 import androidx.core.content.ContextCompat
 
 class PhoneActionsManager(private val context: Context) {
@@ -152,6 +155,8 @@ class PhoneActionsManager(private val context: Context) {
             return ActionResult.Success(getBatteryStatus())
         }
 
+        executeAudioControl(command)?.let { return it }
+
         val service = AgentAccessibilityService.instance
         if (service == null) {
             val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
@@ -179,6 +184,84 @@ class PhoneActionsManager(private val context: Context) {
         } else {
             ActionResult.Failure("Could not execute $command")
         }
+    }
+
+    /** Executes volume and media-key commands locally without requiring Accessibility access. */
+    private fun executeAudioControl(command: String): ActionResult? {
+        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+            ?: return if (command.uppercase() in AUDIO_COMMANDS) {
+                ActionResult.Failure("Audio controls are unavailable on this device.")
+            } else {
+                null
+            }
+
+        return try {
+            when (command.uppercase()) {
+                "VOLUME_UP" -> {
+                    if (audioManager.isVolumeFixed) return ActionResult.Failure("The device uses fixed media volume.")
+                    audioManager.adjustStreamVolume(
+                        AudioManager.STREAM_MUSIC,
+                        AudioManager.ADJUST_RAISE,
+                        AudioManager.FLAG_SHOW_UI
+                    )
+                    ActionResult.Success("Volume increased")
+                }
+                "VOLUME_DOWN" -> {
+                    if (audioManager.isVolumeFixed) return ActionResult.Failure("The device uses fixed media volume.")
+                    audioManager.adjustStreamVolume(
+                        AudioManager.STREAM_MUSIC,
+                        AudioManager.ADJUST_LOWER,
+                        AudioManager.FLAG_SHOW_UI
+                    )
+                    ActionResult.Success("Volume decreased")
+                }
+                "VOLUME_MUTE" -> {
+                    if (audioManager.isVolumeFixed) return ActionResult.Failure("The device uses fixed media volume.")
+                    audioManager.adjustStreamVolume(
+                        AudioManager.STREAM_MUSIC,
+                        AudioManager.ADJUST_MUTE,
+                        AudioManager.FLAG_SHOW_UI
+                    )
+                    ActionResult.Success("Media volume muted")
+                }
+                "VOLUME_UNMUTE" -> {
+                    if (audioManager.isVolumeFixed) return ActionResult.Failure("The device uses fixed media volume.")
+                    audioManager.adjustStreamVolume(
+                        AudioManager.STREAM_MUSIC,
+                        AudioManager.ADJUST_UNMUTE,
+                        AudioManager.FLAG_SHOW_UI
+                    )
+                    ActionResult.Success("Media volume unmuted")
+                }
+                "MEDIA_PAUSE" -> {
+                    dispatchMediaKey(audioManager, KeyEvent.KEYCODE_MEDIA_PAUSE)
+                    ActionResult.Success("Pause command sent to active media")
+                }
+                "MEDIA_PLAY" -> {
+                    dispatchMediaKey(audioManager, KeyEvent.KEYCODE_MEDIA_PLAY)
+                    ActionResult.Success("Play command sent to active media")
+                }
+                else -> null
+            }
+        } catch (e: SecurityException) {
+            Log.e("PhoneActions", "Audio control permission denied for $command", e)
+            ActionResult.Failure("Android denied the audio control request.")
+        } catch (e: Exception) {
+            Log.e("PhoneActions", "Failed to execute audio control $command", e)
+            ActionResult.Failure("Could not perform that audio control.")
+        }
+    }
+
+    private fun dispatchMediaKey(audioManager: AudioManager, keyCode: Int) {
+        val now = SystemClock.uptimeMillis()
+        audioManager.dispatchMediaKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_DOWN, keyCode, 0))
+        audioManager.dispatchMediaKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_UP, keyCode, 0))
+    }
+
+    private companion object {
+        val AUDIO_COMMANDS = setOf(
+            "VOLUME_UP", "VOLUME_DOWN", "VOLUME_MUTE", "VOLUME_UNMUTE", "MEDIA_PAUSE", "MEDIA_PLAY"
+        )
     }
 
     fun playYouTube(query: String) {

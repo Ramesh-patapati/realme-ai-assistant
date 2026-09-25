@@ -75,16 +75,7 @@ class ContinuousVoiceDetector(
                             continue
                         }
 
-                        // When music is actively playing through phone speakers, don't false-trigger on music
-                        if (audioManager?.isMusicActive == true) {
-                            speechFramesCount = 0
-                            try {
-                                Thread.sleep(300)
-                            } catch (e: InterruptedException) {
-                                break
-                            }
-                            continue
-                        }
+                        val isMusicActive = audioManager?.isMusicActive == true
 
                         var read = 0
                         synchronized(lock) {
@@ -110,9 +101,13 @@ class ContinuousVoiceDetector(
                                 baselineEnergy = ((baselineEnergy * 0.95) + (rms * 0.05)).coerceIn(100.0, 750.0)
                             }
 
-                            // Trigger threshold: 2.2x baseline, bounded between 1100.0 and 2000.0 RMS
-                            // (Room ambient is ~300-800, Conversational speech is 1300-2800)
-                            val triggerThreshold = (baselineEnergy * 2.2).coerceIn(1100.0, 2000.0)
+                            // Trigger threshold: 2800.0 when music is active so user can speak over music,
+                            // or 1100.0 - 2000.0 in quiet room
+                            val triggerThreshold = if (isMusicActive) {
+                                2800.0
+                            } else {
+                                (baselineEnergy * 2.2).coerceIn(1100.0, 2000.0)
+                            }
 
                             if (rms > triggerThreshold) {
                                 speechFramesCount++

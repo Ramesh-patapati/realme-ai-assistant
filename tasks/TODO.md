@@ -5,10 +5,10 @@
 - [x] Configure silent audio energy gate to stop OEM HAL clicks (`ContinuousVoiceDetector.kt`)
 - [x] Add screen wake-up on speech detection (`LockScreenVoiceService.kt`)
 - [x] Voice battery inquiry ("Hey Jarvis, what is my battery level?")
+- [x] Volume and media controls ("Turn up volume", "Pause music", "Mute")
 - [ ] Test offline voice calling on Realme 7 Pro with multi-word contact names
 - [ ] Validate WhatsApp chat pre-fill handoff on lock screen
 
 ## 📋 Backlog (Future Features)
-- [ ] Volume and media controls ("Turn up volume", "Pause music")
 - [ ] Flashlight toggle via voice ("Turn on flashlight")
 - [ ] Optional automated WhatsApp send via Accessibility Service

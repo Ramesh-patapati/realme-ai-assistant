@@ -70,6 +70,30 @@ object CommandParser {
             return AIAction.DeviceControl("BATTERY", "")
         }
 
+        // 1b. Volume and active media controls: keep these deterministic and offline.
+        when (clean) {
+            "volume up", "turn volume up", "turn up volume", "turn up the volume",
+            "increase volume", "increase the volume", "raise volume", "make it louder", "louder" ->
+                return AIAction.DeviceControl("VOLUME_UP", "Volume up")
+
+            "volume down", "turn volume down", "turn down volume", "turn down the volume",
+            "decrease volume", "decrease the volume", "lower volume", "make it quieter", "quieter" ->
+                return AIAction.DeviceControl("VOLUME_DOWN", "Volume down")
+
+            "mute", "mute volume", "mute the volume", "mute music" ->
+                return AIAction.DeviceControl("VOLUME_MUTE", "Muted")
+
+            "unmute", "unmute volume", "unmute the volume", "unmute music" ->
+                return AIAction.DeviceControl("VOLUME_UNMUTE", "Unmuted")
+
+            "pause", "pause music", "pause the music", "pause playback" ->
+                return AIAction.DeviceControl("MEDIA_PAUSE", "Pausing music")
+
+            "resume", "resume music", "resume the music", "resume playback",
+            "continue music", "continue the music", "continue playback", "continue playing music" ->
+                return AIAction.DeviceControl("MEDIA_PLAY", "Resuming music")
+        }
+
         // 2. Exact Navigation & System Controls
         when (clean) {
             "go home", "home", "home screen", "open home" -> return AIAction.DeviceControl("HOME", "Going to home screen")
@@ -176,47 +200,23 @@ object CommandParser {
     }
 
     private fun parseWhatsAppCommand(command: String): AIAction? {
-        val normalizedCommand = command
-            .replace(Regex("\\s+(?:on|in|via)\\s+whats\\s?app\\s+", RegexOption.IGNORE_CASE), " ")
-            .replace(Regex("whats app", RegexOption.IGNORE_CASE), "whatsapp")
         val prefixes = listOf(
             "send a whatsapp message to ", "send whatsapp message to ",
             "send a whatsapp to ", "send whatsapp to ", "whatsapp to ",
             "whatsapp message to ",
             "send a message on whatsapp to ", "send message on whatsapp to ",
             "send a message to ", "send message to ",
-            "send a text to ", "send text to ", "message to ", "text to ", "chat with ",
-            "whatsapp ", "message ", "text "
+            "send a text on whatsapp to ", "send text on whatsapp to ",
+            "send a text to ", "send text to ", "message to ", "text to "
         )
-        val prefix = prefixes.firstOrNull { normalizedCommand.startsWith(it, ignoreCase = true) }
-        
-        if (prefix == null) {
-            val isExplicitWhatsApp = normalizedCommand.contains("whatsapp", ignoreCase = true)
-            if (isExplicitWhatsApp && !command.startsWith("open ", ignoreCase = true) && !command.startsWith("launch ", ignoreCase = true)) {
-                val cleanTarget = normalizedCommand
-                    .replace(Regex("\\s+(?:on|in|via)\\s+whatsapp\\b", RegexOption.IGNORE_CASE), "")
-                    .replace(Regex("whatsapp", RegexOption.IGNORE_CASE), "")
-                    .removePrefix("chat with ")
-                    .removePrefix("message ")
-                    .removePrefix("to ")
-                    .trim()
-                val contact = formatName(cleanTarget)
-                if (contact.isNotBlank()) {
-                    return AIAction.SendWhatsApp(contact, "")
-                }
-            }
-            return null
-        }
-
-        var body = normalizedCommand.substring(prefix.length).trim()
-
-        // Ignore channel labels even when speakers place them before the message.
-        body = body.replace(Regex("\\s+(?:on|in|via)\\s+whats\\s?app\\b", RegexOption.IGNORE_CASE), " ").trim()
+        val prefix = prefixes.firstOrNull { command.startsWith(it, ignoreCase = true) } ?: return null
+        val body = command.substring(prefix.length).trim()
 
         val separator = Regex("\\s+(?:saying|say|that|message|msg|text)\\s+|\\s*:\\s*", RegexOption.IGNORE_CASE)
         val match = separator.find(body)
         if (match == null) {
-            val contact = formatName(body)
+            val contactText = removeWhatsAppChannel(body)
+            val contact = formatName(contactText)
             return if (contact.isBlank()) {
                 AIAction.Clarify("Who should I message on WhatsApp?")
             } else {
@@ -224,11 +224,19 @@ object CommandParser {
             }
         }
 
-        val contact = formatName(body.substring(0, match.range.first).trim())
+        val contactText = removeWhatsAppChannel(body.substring(0, match.range.first).trim())
+        val contact = formatName(contactText)
         val message = body.substring(match.range.last + 1).trim()
         if (contact.isBlank()) return AIAction.Clarify("Who should I message on WhatsApp?")
         if (message.isBlank()) return AIAction.Clarify("What message should I send to $contact?")
         return AIAction.SendWhatsApp(contact, message)
+    }
+
+    private fun removeWhatsAppChannel(contact: String): String {
+        return contact.replace(
+            Regex("\\s+(?:on|in|via)\\s+whats\\s?app\\b", RegexOption.IGNORE_CASE),
+            " "
+        ).trim()
     }
 
     private fun removeLeadingPhrase(text: String, phrase: String): String {
