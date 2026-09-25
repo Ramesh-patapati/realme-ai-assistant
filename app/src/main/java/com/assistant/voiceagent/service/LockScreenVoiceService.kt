@@ -164,10 +164,20 @@ class LockScreenVoiceService : Service() {
                         }
                     }
                 } else {
-                    // Never execute a command unless the transcript contains the wake
-                    // phrase. Ambient speech and TV audio must not trigger phone actions.
-                    Log.d("VoiceService", "No wake word found in '$recognizedText'. Remaining silent.")
-                    resumeBackgroundListening()
+                    // One-breath fallback: Speech recognizer started after user said "Hey Jarvis"
+                    // and captured the direct command (e.g. "open camera", "what is my battery", "call Mom")
+                    val directAction = CommandParser.parseDeterministic(recognizedText)
+                    if (directAction != null && directAction !is AIAction.Unknown && directAction !is AIAction.Clarify) {
+                        Log.d("VoiceService", "Direct deterministic command recognized from one-breath speech: $directAction")
+                        wakeScreen()
+                        serviceScope.launch {
+                            handleAIAction(directAction)
+                        }
+                    } else {
+                        // Ambient sound, TV, or unrecognized speech: stay completely silent
+                        Log.d("VoiceService", "No wake word or direct command in '$recognizedText'. Remaining silent.")
+                        resumeBackgroundListening()
+                    }
                 }
             },
             onError = { errorCode, errorMessage ->
