@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.media.AudioManager
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -128,16 +129,50 @@ class LockScreenVoiceService : Service() {
 
     private fun onVoiceActivityDetected() {
         if (!isServiceRunning || isBusy) return
-        isBusy = true
-        wakeScreen()
-        Log.d("VoiceService", "Deliberate voice activity confirmed by AudioRecord! Prompting user...")
-        voiceDetector.pause()
 
-        ttsManager.speak("Yes, I'm listening!") {
-            mainHandler.postDelayed({
-                listenForActiveCommand()
-            }, 300L)
+        // 1. If music or media is actively playing through the device speakers, do not false-trigger
+        val audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+        if (audioManager?.isMusicActive == true) {
+            Log.d("VoiceService", "Music is actively playing on device - ignoring ambient sound.")
+            return
         }
+
+        isBusy = true
+        voiceDetector.pause()
+        Log.d("VoiceService", "Audio energy detected. Starting silent wake-word verification...")
+
+        val prefs = getSharedPreferences("ai_assistant_prefs", Context.MODE_PRIVATE)
+        val customWakeWord = prefs.getString("custom_wake_word", "hey jarvis") ?: "hey jarvis"
+
+        // 2. SILENT recognition session: Verify wake word WITHOUT speaking "Yes, I'm listening!"
+        speechInputManager.startRecognitionSession(
+            onResult = { recognizedText ->
+                Log.d("VoiceService", "Heard during audio detection: '$recognizedText'")
+                val (wakeWordMatched, cleanCommand) = extractWakeWordAndCommand(recognizedText, customWakeWord)
+                if (wakeWordMatched) {
+                    wakeScreen()
+                    if (cleanCommand.isNotBlank()) {
+                        // User spoke the full command: "Hey Jarvis, call Mom" or "Hey Jarvis, what is my battery"
+                        processUserSpokenCommand(cleanCommand)
+                    } else {
+                        // User only said the wake word: "Hey Jarvis"
+                        speakAndResume("Yes, I'm listening!") {
+                            mainHandler.postDelayed({
+                                listenForActiveCommand()
+                            }, 300L)
+                        }
+                    }
+                } else {
+                    // False positive: background noise, talking, TV, or music without "Hey Jarvis"
+                    Log.d("VoiceService", "No wake word found in '$recognizedText'. Remaining silent.")
+                    resumeBackgroundListening()
+                }
+            },
+            onError = { errorCode, errorMessage ->
+                Log.d("VoiceService", "Silent verification finished without speech ($errorCode: $errorMessage).")
+                resumeBackgroundListening()
+            }
+        )
     }
 
     private fun wakeScreen() {

@@ -3,6 +3,7 @@ package com.assistant.voiceagent.service
 import android.annotation.SuppressLint
 import android.content.Context
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.util.Log
@@ -12,6 +13,8 @@ class ContinuousVoiceDetector(
     private val context: Context,
     private val onVoiceActivityDetected: () -> Unit
 ) {
+
+    private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
 
     private val sampleRate = 16000
     private val channelConfig = AudioFormat.CHANNEL_IN_MONO
@@ -66,6 +69,17 @@ class ContinuousVoiceDetector(
                         if (isPaused) {
                             try {
                                 Thread.sleep(100)
+                            } catch (e: InterruptedException) {
+                                break
+                            }
+                            continue
+                        }
+
+                        // When music is actively playing through phone speakers, don't false-trigger on music
+                        if (audioManager?.isMusicActive == true) {
+                            speechFramesCount = 0
+                            try {
+                                Thread.sleep(300)
                             } catch (e: InterruptedException) {
                                 break
                             }
