@@ -1,5 +1,12 @@
 # Project Tasks & Roadmap
 
+See [the staged development roadmap](../docs/DEVELOPMENT_ROADMAP.md) for the build/test process and milestone acceptance checks.
+
+## Current engineering gates
+- [ ] Run `testDebugUnitTest` on JDK 17.
+- [ ] Run `assembleDebug` and install that exact artifact on the Realme 7 Pro.
+- [ ] Record pass/fail results in `docs/DEVELOPMENT_ROADMAP.md` before closing the milestone.
+
 ## 📌 High Priority (Current Sprint)
 - [x] Integrate case-preserving WhatsApp command parser (`CommandParser.kt`)
 - [x] Configure silent audio energy gate to stop OEM HAL clicks (`ContinuousVoiceDetector.kt`)

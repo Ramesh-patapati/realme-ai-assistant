@@ -156,16 +156,18 @@ class PhoneActionsManager(private val context: Context) {
         }
     }
 
-    private fun normalizeContactName(value: String): String {
-        return value.lowercase(java.util.Locale.ROOT)
-            .replace(Regex("[^\\p{L}\\p{N}]+"), " ")
-            .trim()
-            .replace(Regex("\\s+"), " ")
-    }
+    companion object {
+        fun normalizeContactName(value: String): String {
+            return value.lowercase(java.util.Locale.ROOT)
+                .replace(Regex("[^\\p{L}\\p{N}]+"), " ")
+                .trim()
+                .replace(Regex("\\s+"), " ")
+        }
 
-    private fun normalizePhoneNumber(value: String): String? {
-        val compact = value.replace(Regex("[\\s().-]"), "")
-        return compact.takeIf { it.matches(Regex("^\\+?[0-9]{3,}$")) }
+        fun normalizePhoneNumber(value: String): String? {
+            val compact = value.replace(Regex("[\\s().-]"), "")
+            return compact.takeIf { it.matches(Regex("^\\+?[0-9]{3,}$")) }
+        }
     }
 
     fun getBatteryStatus(): String {

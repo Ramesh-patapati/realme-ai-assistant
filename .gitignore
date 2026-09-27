@@ -1,0 +1,18 @@
+# Android and Gradle build output
+.gradle/
+**/build/
+local.properties
+*.iml
+.idea/
+
+# Local app data and credentials
+ai_assistant_prefs.xml
+**/ai_assistant_prefs.xml
+.env
+*.jks
+*.keystore
+
+# Generated APKs and extracted package contents
+*.apk
+app-debug.zip
+extracted_apk/

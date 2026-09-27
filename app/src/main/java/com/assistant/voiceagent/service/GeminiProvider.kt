@@ -27,6 +27,7 @@ class GeminiProvider(private val client: OkHttpClient) {
     private val systemInstruction = """
         You are Jarvis, a fast voice assistant with full control over an Android phone.
         Speed is critical. Spoken answers must be punchy, natural, and under 1-2 sentences.
+        Use earlier turns in this conversation to understand follow-up questions and pronouns. Never guess an unclear contact; ask who the user means.
 
         Analyze the user's voice command and respond STRICTLY with a single JSON object:
         - If stopping: {"action": "STOP", "speech": "Stopping now."}
@@ -39,14 +40,18 @@ class GeminiProvider(private val client: OkHttpClient) {
         - If general question: {"action": "ANSWER", "speech": "<Short spoken answer>"}
     """.trimIndent()
 
-    suspend fun callGeminiWithFallback(userInput: String, apiKey: String): AIAction {
+    suspend fun callGeminiWithFallback(
+        userInput: String,
+        apiKey: String,
+        history: List<Pair<String, String>> = emptyList()
+    ): AIAction {
         if (!apiKey.startsWith("AIzaSy")) {
             return AIAction.Answer("Please enter a valid Gemini API key starting with A I z a in app settings.")
         }
         var lastError: Exception? = null
         for (model in geminiModels) {
             try {
-                return callGemini(userInput, apiKey, model)
+                return callGemini(userInput, apiKey, model, history)
             } catch (e: Exception) {
                 lastError = e
                 Log.w("GeminiProvider", "Model $model failed (${e.message}), trying next fallback...")
@@ -56,9 +61,26 @@ class GeminiProvider(private val client: OkHttpClient) {
         return AIAction.Answer("Could not reach AI servers. Please check your network connection.")
     }
 
-    private suspend fun callGemini(userInput: String, apiKey: String, model: String): AIAction {
+    private suspend fun callGemini(
+        userInput: String,
+        apiKey: String,
+        model: String,
+        history: List<Pair<String, String>>
+    ): AIAction {
         val payload = JSONObject().apply {
             put("contents", JSONArray().apply {
+                history.forEach { (role, content) ->
+                    if (role == "user" || role == "assistant") {
+                        put(JSONObject().apply {
+                            put("role", if (role == "assistant") "model" else "user")
+                            put("parts", JSONArray().apply {
+                                put(JSONObject().apply {
+                                    put("text", content)
+                                })
+                            })
+                        })
+                    }
+                }
                 put(JSONObject().apply {
                     put("role", "user")
                     put("parts", JSONArray().apply {

@@ -146,23 +146,26 @@ class WhatsAppNotificationService : NotificationListenerService() {
         }, 450)
     }
 
-    private fun cleanReplyPrefixes(rawText: String): String {
-        var clean = rawText.trim()
-        val prefixes = listOf(
-            "yes tell him to ", "yes tell her to ", "yes tell them to ",
-            "tell him to ", "tell her to ", "tell them to ",
-            "yes tell him ", "yes tell her ", "yes tell them ",
-            "tell him ", "tell her ", "tell them ",
-            "yes reply ", "reply ", "say ", "send that ", "send "
-        )
-        for (prefix in prefixes) {
-            if (clean.startsWith(prefix, ignoreCase = true)) {
-                clean = clean.substring(prefix.length).trim()
-                break
+    companion object {
+        fun cleanReplyPrefixes(rawText: String): String {
+            var clean = rawText.trim()
+            val prefixes = listOf(
+                "yes tell him to ", "yes tell her to ", "yes tell them to ",
+                "tell him to ", "tell her to ", "tell them to ",
+                "yes tell him ", "yes tell her ", "yes tell them ",
+                "tell him ", "tell her ", "tell them ",
+                "yes reply ", "reply ", "say ", "send that ", "send "
+            )
+            for (prefix in prefixes) {
+                if (clean.startsWith(prefix, ignoreCase = true)) {
+                    clean = clean.substring(prefix.length).trim()
+                    break
+                }
             }
+            return clean
         }
-        return clean
     }
+
 
     private fun sendQuickReply(sbn: StatusBarNotification, replyText: String): Boolean {
         val actions = sbn.notification.actions

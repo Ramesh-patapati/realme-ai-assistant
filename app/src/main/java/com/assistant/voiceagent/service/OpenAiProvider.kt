@@ -151,14 +151,26 @@ class OpenAiProvider(private val client: OkHttpClient) {
         ]
     """.trimIndent())
 
-    suspend fun callOpenAiWithTools(userInput: String, apiKey: String): AIAction {
+    suspend fun callOpenAiWithTools(
+        userInput: String,
+        apiKey: String,
+        history: List<Pair<String, String>> = emptyList()
+    ): AIAction {
         val payload = JSONObject().apply {
             put("model", "gpt-4o-mini")
             put("messages", JSONArray().apply {
                 put(JSONObject().apply {
                     put("role", "system")
-                    put("content", "You are Jarvis, a fast voice assistant on Android. Use tools to execute phone actions. For general knowledge, answer in 1-2 concise spoken sentences.")
+                    put("content", "You are Jarvis, a fast voice assistant on Android. Use the recent conversation to understand follow-up requests and pronouns. Never guess an unclear contact; ask who the user means. Use tools to execute phone actions. For general knowledge, answer in 1-2 concise spoken sentences.")
                 })
+                history.forEach { (role, content) ->
+                    if (role == "user" || role == "assistant") {
+                        put(JSONObject().apply {
+                            put("role", role)
+                            put("content", content)
+                        })
+                    }
+                }
                 put(JSONObject().apply {
                     put("role", "user")
                     put("content", userInput)
