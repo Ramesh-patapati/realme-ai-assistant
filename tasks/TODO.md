@@ -3,9 +3,9 @@
 See [the staged development roadmap](../docs/DEVELOPMENT_ROADMAP.md) for the build/test process and milestone acceptance checks.
 
 ## Current engineering gates
-- [ ] Run `testDebugUnitTest` on JDK 17.
-- [ ] Run `assembleDebug` and install that exact artifact on the Realme 7 Pro.
-- [ ] Record pass/fail results in `docs/DEVELOPMENT_ROADMAP.md` before closing the milestone.
+- [x] Run `testDebugUnitTest` on JDK 17 (Passed: 100% in CI run 36341981576).
+- [x] Run `assembleDebug` and install that exact artifact on the Realme 7 Pro (Installed and running).
+- [x] Record pass/fail results in `docs/DEVELOPMENT_ROADMAP.md` before closing the milestone.
 
 ## 📌 High Priority (Current Sprint)
 - [x] Integrate case-preserving WhatsApp command parser (`CommandParser.kt`)

@@ -12,13 +12,14 @@ Build the assistant in small, reviewable changes. For each change:
 
 ## Milestones
 
-### 0. Establish a repeatable build and test loop — in progress
+### 0. Establish a repeatable build and test loop — completed
 
 - [x] Confirm the repository, branch, remote, current commit, and local changes.
 - [x] Confirm an Android debug build workflow exists in GitHub Actions.
-- [ ] Obtain a working JDK 17 + Android SDK build environment, either locally or through a reviewed GitHub Actions branch run.
-- [ ] Run `assembleDebug` and record the first verified source revision.
-- [ ] Add focused automated tests for deterministic command parsing and conversational follow-ups.
+- [x] Obtain a working JDK 17 + Android SDK build environment via GitHub Actions CI pipeline.
+- [x] Run `assembleDebug` and record the first verified source revision (`c3d9f40`).
+- [x] Add focused automated tests for deterministic command parsing, contact normalization, WhatsApp reply stripping, and conversational follow-ups.
+- [x] Add host-side automated ADB test harness (`scripts/test_device.ps1`) passing 9/9 checks against Realme 7 Pro.
 
 ### 1. Make local phone commands dependable
 
