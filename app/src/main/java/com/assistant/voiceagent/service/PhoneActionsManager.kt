@@ -157,6 +157,10 @@ class PhoneActionsManager(private val context: Context) {
     }
 
     companion object {
+        val AUDIO_COMMANDS = setOf(
+            "VOLUME_UP", "VOLUME_DOWN", "VOLUME_MUTE", "VOLUME_UNMUTE", "MEDIA_PAUSE", "MEDIA_PLAY"
+        )
+
         fun normalizeContactName(value: String): String {
             return value.lowercase(java.util.Locale.ROOT)
                 .replace(Regex("[^\\p{L}\\p{N}]+"), " ")
@@ -319,12 +323,6 @@ class PhoneActionsManager(private val context: Context) {
         val now = SystemClock.uptimeMillis()
         audioManager.dispatchMediaKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_DOWN, keyCode, 0))
         audioManager.dispatchMediaKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_UP, keyCode, 0))
-    }
-
-    private companion object {
-        val AUDIO_COMMANDS = setOf(
-            "VOLUME_UP", "VOLUME_DOWN", "VOLUME_MUTE", "VOLUME_UNMUTE", "MEDIA_PAUSE", "MEDIA_PLAY"
-        )
     }
 
     fun playYouTube(query: String): ActionResult {
