@@ -58,9 +58,16 @@ class PhoneActionsManager(private val context: Context) {
             }
             is FindResult.Found -> normalizePhoneNumber(found.number)
                 ?: return ActionResult.Failure("The saved number for $target isn't valid.")
-            is FindResult.Ambiguous -> return ActionResult.Failure(
-                "I found more than one number for $target. Please make the contact name more specific."
-            )
+            is FindResult.Ambiguous -> {
+                val names = found.candidates.map { it.first }.distinct()
+                return if (names.size > 1) {
+                    val nameList = names.joinToString(", or ")
+                    ActionResult.Failure("I found multiple contacts: $nameList. Which one do you mean?")
+                } else {
+                    // Same contact name, multiple numbers - shouldn't happen with ContactMatcher fix
+                    ActionResult.Failure("I found more than one number for $target. Please make the contact name more specific.")
+                }
+            }
             FindResult.NotFound -> return ActionResult.Failure("I couldn't find a contact named $target. Check the saved contact name and try again.")
             FindResult.LookupFailed -> return ActionResult.Failure("I couldn't read your contacts. Please check Contacts access and try again.")
         }
@@ -85,7 +92,7 @@ class PhoneActionsManager(private val context: Context) {
 
     sealed class FindResult {
         data class Found(val number: String) : FindResult()
-        data class Ambiguous(val matchingNumbers: Int) : FindResult()
+        data class Ambiguous(val candidates: List<Pair<String, String>>) : FindResult()
         object NotFound : FindResult()
         object PermissionNeeded : FindResult()
         object LookupFailed : FindResult()
@@ -96,21 +103,19 @@ class PhoneActionsManager(private val context: Context) {
             return FindResult.PermissionNeeded
         }
 
-        val queryName = normalizeContactName(name)
+        val queryName = ContactMatcher.normalizeContactName(name)
         if (queryName.isBlank()) return FindResult.NotFound
-        val projection = arrayOf(
-            ContactsContract.CommonDataKinds.Phone.NUMBER,
-            ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME
-        )
 
-        // Read the device's phone contacts locally, then compare normalized names.
-        // This handles punctuation, spacing, and first-name commands such as
-        // "call Naveen" when the saved name is "Naveen Kumar". No contact data
-        // leaves the device.
-        val queryTokens = queryName.split(' ').toSet()
-        val numbersByScore = mutableMapOf<Int, MutableSet<String>>()
+        val contacts = mutableListOf<ContactRecord>()
         var queryFailed = false
         try {
+            val projection = arrayOf(
+                ContactsContract.CommonDataKinds.Phone.NUMBER,
+                ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                ContactsContract.CommonDataKinds.Phone.TYPE,
+                ContactsContract.CommonDataKinds.Phone.IS_PRIMARY,
+                ContactsContract.CommonDataKinds.Phone.IS_SUPER_PRIMARY
+            )
             context.contentResolver.query(
                 ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
                 projection,
@@ -120,25 +125,22 @@ class PhoneActionsManager(private val context: Context) {
             )?.use { cursor ->
                 val numberIndex = cursor.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.NUMBER)
                 val nameIndex = cursor.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
+                val typeIndex = cursor.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.TYPE)
+                val primaryIndex = cursor.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.IS_PRIMARY)
+                val superPrimaryIndex = cursor.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.IS_SUPER_PRIMARY)
                 while (cursor.moveToNext()) {
                     val displayName = cursor.getString(nameIndex)?.trim().orEmpty()
                     val number = cursor.getString(numberIndex)?.trim()
                     if (displayName.isBlank() || number.isNullOrBlank()) continue
-
-                    val normalizedDisplayName = normalizeContactName(displayName)
-                    val contactTokens = normalizedDisplayName.split(' ').toSet()
-                    val score = when {
-                        normalizedDisplayName == queryName -> 3
-                        contactTokens == queryTokens -> 3
-                        queryTokens.isNotEmpty() && queryTokens.all { it in contactTokens } -> 2
-                        else -> 0
-                    }
-                    if (score == 0) continue
-
-                    val normalizedNumber = normalizePhoneNumber(number) ?: number.filter(Char::isDigit)
-                    if (normalizedNumber.isNotBlank()) {
-                        numbersByScore.getOrPut(score) { linkedSetOf() }.add(normalizedNumber)
-                    }
+                    contacts.add(
+                        ContactRecord(
+                            displayName = displayName,
+                            phoneNumber = number,
+                            phoneType = cursor.getInt(typeIndex),
+                            isPrimary = cursor.getInt(primaryIndex) != 0,
+                            isSuperPrimary = cursor.getInt(superPrimaryIndex) != 0
+                        )
+                    )
                 }
             } ?: run { queryFailed = true }
         } catch (e: Exception) {
@@ -147,12 +149,11 @@ class PhoneActionsManager(private val context: Context) {
         }
 
         if (queryFailed) return FindResult.LookupFailed
-        val bestScore = numbersByScore.keys.maxOrNull() ?: return FindResult.NotFound
-        val bestNumbers = numbersByScore[bestScore].orEmpty()
-        return when (bestNumbers.size) {
-            0 -> FindResult.NotFound
-            1 -> FindResult.Found(bestNumbers.first())
-            else -> FindResult.Ambiguous(bestNumbers.size)
+
+        return when (val result = ContactMatcher.findBestMatch(name, contacts)) {
+            is ContactMatchResult.Found -> FindResult.Found(result.phoneNumber)
+            is ContactMatchResult.Ambiguous -> FindResult.Ambiguous(result.candidates)
+            ContactMatchResult.NotFound -> FindResult.NotFound
         }
     }
 
@@ -161,12 +162,7 @@ class PhoneActionsManager(private val context: Context) {
             "VOLUME_UP", "VOLUME_DOWN", "VOLUME_MUTE", "VOLUME_UNMUTE", "MEDIA_PAUSE", "MEDIA_PLAY"
         )
 
-        fun normalizeContactName(value: String): String {
-            return value.lowercase(java.util.Locale.ROOT)
-                .replace(Regex("[^\\p{L}\\p{N}]+"), " ")
-                .trim()
-                .replace(Regex("\\s+"), " ")
-        }
+        fun normalizeContactName(value: String): String = ContactMatcher.normalizeContactName(value)
 
         fun normalizePhoneNumber(value: String): String? {
             val compact = value.replace(Regex("[\\s().-]"), "")
@@ -381,13 +377,20 @@ class PhoneActionsManager(private val context: Context) {
                 )
             }
             is FindResult.Found -> found.number
-            is FindResult.Ambiguous -> return ActionResult.Failure(
-                "I found more than one number for $recipient. Please make the contact name more specific."
-            )
+            is FindResult.Ambiguous -> {
+                val names = found.candidates.map { it.first }.distinct()
+                return if (names.size > 1) {
+                    val nameList = names.joinToString(", or ")
+                    ActionResult.Failure("I found multiple contacts: $nameList. Which one do you mean?")
+                } else {
+                    ActionResult.Failure("I found more than one number for $recipient. Please make the contact name more specific.")
+                }
+            }
             FindResult.NotFound -> return ActionResult.Failure("I couldn't find a contact named $recipient. Check the saved contact name and try again.")
             FindResult.LookupFailed -> return ActionResult.Failure("I couldn't read your contacts. Please check Contacts access and try again.")
         }
-        val waNumber = phoneNumber.filter(Char::isDigit)
+        val rawDigits = phoneNumber.filter(Char::isDigit)
+        val waNumber = ContactMatcher.ensureCountryCode(rawDigits)
         if (waNumber.length !in 7..15) {
             return ActionResult.Failure("The phone number for $recipient doesn't look valid for WhatsApp.")
         }
