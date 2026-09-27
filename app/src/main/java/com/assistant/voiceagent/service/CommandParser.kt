@@ -18,7 +18,7 @@ object CommandParser {
         var originalCommand = userInput.trim()
         // Strip conversational leading filler words (e.g. "and ", "please ", "can you ")
         val fillers = listOf(
-            "hey jarvis ", "ok jarvis ", "hello jarvis ", "jarvis ",
+            "hey jarvis ", "ok jarvis ", "hello jarvis ", "hi jarvis ", "jarvis ", "hey there ",
             "and ", "please ", "can you please ", "can you ", "could you please ", "could you ",
             "i want you to ", "i want to ", "just ", "i said to ", "i said "
         )
@@ -37,6 +37,25 @@ object CommandParser {
         // such as "Hey Jarvis, please stop" are handled locally too.
         if (clean in STOP_WORDS) {
             return AIAction.Stop
+        }
+
+        // Greetings and identity queries (instant offline response)
+        if (clean in listOf(
+            "hi", "hello", "hey", "hello jarvis", "hi jarvis", "hey jarvis",
+            "hey there", "good morning", "good afternoon", "good evening",
+            "how are you", "how are you doing", "who are you", "what is your name", "what's your name",
+            "what can you do", "help", "who created you"
+        )) {
+            return when (clean) {
+                "how are you", "how are you doing" -> AIAction.Answer("I am doing great and ready to assist you!")
+                "who are you", "what is your name", "what's your name" -> AIAction.Answer("I am Jarvis, your personal AI voice assistant.")
+                "good morning" -> AIAction.Answer("Good morning! How can I assist you today?")
+                "good afternoon" -> AIAction.Answer("Good afternoon! What can I do for you?")
+                "good evening" -> AIAction.Answer("Good evening! How can I help you tonight?")
+                "what can you do", "help" -> AIAction.Answer("I can call contacts, open apps, read and reply to WhatsApp messages, take photos, check battery, and answer questions.")
+                "who created you" -> AIAction.Answer("I was created to be your personal AI voice assistant.")
+                else -> AIAction.Answer("Hello! How can I help you today?")
+            }
         }
 
         // Camera photo capture & front camera controls

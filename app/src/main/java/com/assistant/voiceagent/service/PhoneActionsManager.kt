@@ -61,7 +61,8 @@ class PhoneActionsManager(private val context: Context) {
             is FindResult.Ambiguous -> return ActionResult.Failure(
                 "I found more than one number for $target. Please make the contact name more specific."
             )
-            FindResult.NotFound -> return ActionResult.Failure("I couldn't find an exact contact named $target.")
+            FindResult.NotFound -> return ActionResult.Failure("I couldn't find a contact named $target. Check the saved contact name and try again.")
+            FindResult.LookupFailed -> return ActionResult.Failure("I couldn't read your contacts. Please check Contacts access and try again.")
         }
 
         return try {
@@ -87,6 +88,7 @@ class PhoneActionsManager(private val context: Context) {
         data class Ambiguous(val matchingNumbers: Int) : FindResult()
         object NotFound : FindResult()
         object PermissionNeeded : FindResult()
+        object LookupFailed : FindResult()
     }
 
     private fun findPhoneNumberByName(name: String): FindResult {
@@ -94,81 +96,71 @@ class PhoneActionsManager(private val context: Context) {
             return FindResult.PermissionNeeded
         }
 
-        val cleanName = name.trim()
+        val queryName = normalizeContactName(name)
+        if (queryName.isBlank()) return FindResult.NotFound
         val projection = arrayOf(
             ContactsContract.CommonDataKinds.Phone.NUMBER,
             ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME
         )
 
-        val exactNumbers = linkedSetOf<String>()
-        val filterUri = Uri.withAppendedPath(
-            ContactsContract.CommonDataKinds.Phone.CONTENT_FILTER_URI,
-            Uri.encode(cleanName)
-        )
-        collectExactContactNumbers(filterUri, projection, cleanName, exactNumbers)
-        if (exactNumbers.isEmpty()) {
-            val exactSelection = "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} = ? COLLATE NOCASE"
-            collectExactContactNumbers(
-                ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
-                projection,
-                cleanName,
-                exactNumbers,
-                exactSelection,
-                arrayOf(cleanName)
-            )
-        }
-        if (exactNumbers.isEmpty()) {
-            val partialSelection = "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} LIKE ? COLLATE NOCASE"
-            collectExactContactNumbers(
-                ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
-                projection,
-                cleanName,
-                exactNumbers,
-                partialSelection,
-                arrayOf("%$cleanName%"),
-                allowPartial = true
-            )
-        }
-
-        return when (exactNumbers.size) {
-            0 -> FindResult.NotFound
-            1 -> FindResult.Found(exactNumbers.first())
-            else -> FindResult.Ambiguous(exactNumbers.size)
-        }
-    }
-
-    private fun collectExactContactNumbers(
-        uri: Uri,
-        projection: Array<String>,
-        requestedName: String,
-        numbers: MutableSet<String>,
-        selection: String? = null,
-        selectionArgs: Array<String>? = null,
-        allowPartial: Boolean = false
-    ) {
+        // Read the device's phone contacts locally, then compare normalized names.
+        // This handles punctuation, spacing, and first-name commands such as
+        // "call Naveen" when the saved name is "Naveen Kumar". No contact data
+        // leaves the device.
+        val queryTokens = queryName.split(' ').toSet()
+        val numbersByScore = mutableMapOf<Int, MutableSet<String>>()
+        var queryFailed = false
         try {
-            context.contentResolver.query(uri, projection, selection, selectionArgs, null)?.use { cursor ->
+            context.contentResolver.query(
+                ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                projection,
+                null,
+                null,
+                null
+            )?.use { cursor ->
                 val numberIndex = cursor.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.NUMBER)
                 val nameIndex = cursor.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
                 while (cursor.moveToNext()) {
-                    val displayName = cursor.getString(nameIndex)?.trim() ?: ""
+                    val displayName = cursor.getString(nameIndex)?.trim().orEmpty()
                     val number = cursor.getString(numberIndex)?.trim()
-                    val matches = if (allowPartial) {
-                        displayName.contains(requestedName, ignoreCase = true)
-                    } else {
-                        displayName.equals(requestedName, ignoreCase = true)
+                    if (displayName.isBlank() || number.isNullOrBlank()) continue
+
+                    val normalizedDisplayName = normalizeContactName(displayName)
+                    val contactTokens = normalizedDisplayName.split(' ').toSet()
+                    val score = when {
+                        normalizedDisplayName == queryName -> 3
+                        contactTokens == queryTokens -> 3
+                        queryTokens.isNotEmpty() && queryTokens.all { it in contactTokens } -> 2
+                        else -> 0
                     }
-                    if (matches && !number.isNullOrBlank()) {
-                        val cleanNum = normalizePhoneNumber(number) ?: number.filter(Char::isDigit)
-                        if (cleanNum.isNotBlank()) {
-                            numbers.add(cleanNum)
-                        }
+                    if (score == 0) continue
+
+                    val normalizedNumber = normalizePhoneNumber(number) ?: number.filter(Char::isDigit)
+                    if (normalizedNumber.isNotBlank()) {
+                        numbersByScore.getOrPut(score) { linkedSetOf() }.add(normalizedNumber)
                     }
                 }
-            }
+            } ?: run { queryFailed = true }
         } catch (e: Exception) {
-            Log.w("PhoneActions", "Contact query failed for $requestedName", e)
+            queryFailed = true
+            Log.w("PhoneActions", "Contact query failed for $name", e)
         }
+
+        if (queryFailed) return FindResult.LookupFailed
+        val bestScore = numbersByScore.keys.maxOrNull() ?: return FindResult.NotFound
+        val bestNumbers = numbersByScore[bestScore].orEmpty()
+        return when (bestNumbers.size) {
+            0 -> FindResult.NotFound
+            1 -> FindResult.Found(bestNumbers.first())
+            else -> FindResult.Ambiguous(bestNumbers.size)
+        }
+    }
+
+    private fun normalizeContactName(value: String): String {
+        return value.lowercase(java.util.Locale.ROOT)
+            .replace(Regex("[^\\p{L}\\p{N}]+"), " ")
+            .trim()
+            .replace(Regex("\\s+"), " ")
     }
 
     private fun normalizePhoneNumber(value: String): String? {
@@ -392,7 +384,8 @@ class PhoneActionsManager(private val context: Context) {
             is FindResult.Ambiguous -> return ActionResult.Failure(
                 "I found more than one number for $recipient. Please make the contact name more specific."
             )
-            FindResult.NotFound -> return ActionResult.Failure("I couldn't find an exact contact named $recipient.")
+            FindResult.NotFound -> return ActionResult.Failure("I couldn't find a contact named $recipient. Check the saved contact name and try again.")
+            FindResult.LookupFailed -> return ActionResult.Failure("I couldn't read your contacts. Please check Contacts access and try again.")
         }
         val waNumber = phoneNumber.filter(Char::isDigit)
         if (waNumber.length !in 7..15) {

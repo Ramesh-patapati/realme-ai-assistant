@@ -92,7 +92,7 @@ class SpeechInputManager(private val context: Context) {
                             destroyRecognizerSync()
                             if (!matches.isNullOrEmpty()) {
                                 val recognized = matches[0]
-                                Log.d("SpeechInput", "Transcribed: '$recognized' (gen=$currentGeneration)")
+                                Log.d("SpeechInput", "Transcribed: '$recognized' (candidates=$matches, gen=$currentGeneration)")
                                 onResult(recognized)
                             } else {
                                 onError(SpeechRecognizer.ERROR_NO_MATCH, "No speech recognized")
@@ -107,12 +107,11 @@ class SpeechInputManager(private val context: Context) {
                 val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                     putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
                     putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
-                    putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+                    putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
                     putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
                     putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
-                    putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1400L)
-                    putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1000L)
-                    putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 1500L)
+                    putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1800L)
+                    putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1200L)
                 }
 
                 speechRecognizer?.startListening(intent)

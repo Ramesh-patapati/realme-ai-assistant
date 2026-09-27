@@ -145,51 +145,10 @@ class LockScreenVoiceService : Service() {
 
         isBusy = true
         voiceDetector.pause()
-        Log.d("VoiceService", "Audio energy detected. Starting silent wake-word verification...")
+        Log.d("VoiceService", "Voice activity confirmed. Waking screen and responding...")
 
-        val prefs = getSharedPreferences("ai_assistant_prefs", Context.MODE_PRIVATE)
-        val customWakeWord = prefs.getString("custom_wake_word", "hey jarvis") ?: "hey jarvis"
-
-        // 2. SILENT recognition session: Verify wake word WITHOUT speaking "Yes, I'm listening!"
-        speechInputManager.startRecognitionSession(
-            onResult = { recognizedText ->
-                Log.d("VoiceService", "Heard during audio detection: '$recognizedText'")
-                val (wakeWordMatched, cleanCommand) = extractWakeWordAndCommand(recognizedText, customWakeWord)
-                if (wakeWordMatched) {
-                    wakeScreen()
-                    if (cleanCommand.isNotBlank()) {
-                        // User spoke the full command: "Hey Jarvis, call Mom" or "Hey Jarvis, what is my battery"
-                        processUserSpokenCommand(cleanCommand)
-                    } else {
-                        // User only said the wake word: "Hey Jarvis"
-                        speakAndResume("Yes, I'm listening!") {
-                            mainHandler.postDelayed({
-                                listenForActiveCommand()
-                            }, 300L)
-                        }
-                    }
-                } else {
-                    // One-breath fallback: Speech recognizer started after user said "Hey Jarvis"
-                    // and captured the direct command (e.g. "open camera", "what is my battery", "call Mom")
-                    val directAction = CommandParser.parseDeterministic(recognizedText)
-                    if (directAction != null && directAction !is AIAction.Unknown && directAction !is AIAction.Clarify) {
-                        Log.d("VoiceService", "Direct deterministic command recognized from one-breath speech: $directAction")
-                        wakeScreen()
-                        serviceScope.launch {
-                            handleAIAction(directAction)
-                        }
-                    } else {
-                        // Ambient sound, TV, or unrecognized speech: stay completely silent
-                        Log.d("VoiceService", "No wake word or direct command in '$recognizedText'. Remaining silent.")
-                        resumeBackgroundListening()
-                    }
-                }
-            },
-            onError = { errorCode, errorMessage ->
-                Log.d("VoiceService", "Silent verification finished without speech ($errorCode: $errorMessage).")
-                resumeBackgroundListening()
-            }
-        )
+        wakeScreen()
+        triggerVoiceInteraction("Yes, I'm listening!")
     }
 
     private fun wakeScreen() {
