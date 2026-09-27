@@ -105,41 +105,6 @@ class LockScreenVoiceService : Service() {
         return START_STICKY
     }
 
-    private fun extractWakeWordAndCommand(speech: String, customWakeWord: String): Pair<Boolean, String> {
-        val cleanSpeech = speech.lowercase().trim().replace(Regex("[.,?!]"), "")
-        val wakeWords = mutableListOf<String>()
-        val cleanCustom = customWakeWord.lowercase().trim().replace(Regex("[.,?!]"), "")
-        if (cleanCustom.isNotBlank() && cleanCustom != "hey jarvis") {
-            wakeWords.add(cleanCustom)
-        }
-        wakeWords.addAll(listOf(
-            "hey jarvis", "ok jarvis", "hello jarvis", "jarvis", "hi jarvis",
-            "hey javis", "javis", "jarves", "hey travis", "travis", "service", "hey service",
-            "harvest", "hey harvest", "service please",
-            "hey assistant", "ok assistant", "hello assistant", "hey siri", "hello siri", "assistant"
-        ))
-
-        for (wake in wakeWords) {
-            if (cleanSpeech == wake) {
-                return Pair(true, "")
-            }
-            if (cleanSpeech.startsWith("$wake ")) {
-                val command = cleanSpeech.removePrefix("$wake ").trim()
-                return Pair(true, command)
-            }
-            if (cleanSpeech.startsWith(wake)) {
-                val remainder = cleanSpeech.removePrefix(wake).trim()
-                return Pair(true, remainder)
-            }
-            val idx = cleanSpeech.indexOf(wake)
-            if (idx >= 0) {
-                val remainder = (cleanSpeech.substring(0, idx) + " " + cleanSpeech.substring(idx + wake.length)).trim()
-                return Pair(true, remainder)
-            }
-        }
-        return Pair(false, "")
-    }
-
     private fun onVoiceActivityDetected() {
         if (!isServiceRunning || isBusy) return
 
@@ -186,7 +151,7 @@ class LockScreenVoiceService : Service() {
                 Log.d("VoiceService", "Active command heard: '$recognizedText'")
                 val prefs = getSharedPreferences("ai_assistant_prefs", Context.MODE_PRIVATE)
                 val customWakeWord = prefs.getString("custom_wake_word", "hey jarvis") ?: "hey jarvis"
-                val (wakeWordMatched, cleanCommand) = extractWakeWordAndCommand(recognizedText, customWakeWord)
+                val (wakeWordMatched, cleanCommand) = WakeWordMatcher.match(recognizedText, customWakeWord)
                 val finalCommand = if (wakeWordMatched && cleanCommand.isNotBlank()) cleanCommand else recognizedText
                 if (finalCommand.isNotBlank() && (!wakeWordMatched || cleanCommand.isNotBlank())) {
                     processUserSpokenCommand(finalCommand)
