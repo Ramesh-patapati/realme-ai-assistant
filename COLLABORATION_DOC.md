@@ -1,94 +1,98 @@
-# 🤝 Codex & Antigravity Collaboration Guide
+# 🤝 Codex & Antigravity Collaboration Protocol & Role Definition
 **Project:** Realme AI Assistant (Jarvis)  
 **Target Hardware:** Realme 7 Pro (RMX2170, Qualcomm Snapdragon 720G, Android 11/12 with ColorOS / Realme UI)  
 **Repository:** `https://github.com/Ramesh-patapati/realme-ai-assistant`
 
 ---
 
-## 1. Project Goal & Overview
-Build a high-performance, real-time AI voice assistant for Android that:
-1. **Listens Hands-Free**: Listens for wake words (e.g. `"Hey Jarvis"`, `"Jarvis"`) from lock screen or standby.
-2. **Executes Phone Automations**:
-   - Phone calls (Contacts lookup + `ACTION_CALL`)
-   - WhatsApp / Gmail notification auto-read and voice replies
-   - YouTube playback (music / video search)
-   - Food ordering (Zomato navigation)
-   - Device controls (Home, Back, Volume, Flashlight)
-   - General knowledge Q&A via AI Engine
-3. **Dual Engine Support**: Google Gemini API & OpenAI Codex / GPT-4o with strict Function Calling.
+## 1. Division of Roles & Responsibilities
 
-### Priority User Aim (Call and WhatsApp)
-The owner's main goal is to control the phone by voice, quickly and reliably, by saying **"Hey Jarvis, call [contact]"** or **"Hey Jarvis, send a WhatsApp message to [contact] saying [message]"**. These common commands should be parsed and routed locally with no cloud AI round-trip. Calls should use the intended contact and report permission, missing-contact, or ambiguous-contact problems clearly. WhatsApp commands must identify the full contact name and exact message; never guess a recipient or silently open a blank/generic chat.
-
-**Current behavior to validate and improve:** phone calls use Android's direct-call intent after contact lookup. WhatsApp currently opens the contact conversation with the text prefilled; it does not press Send, so the user must review and send the draft. The voice prompt must not claim a message was sent. Automatic sending, if pursued, needs explicit device-side validation of WhatsApp UI behavior and a clear user authorization/confirmation design.
-
-**Acceptance checks for Antigravity on the Realme 7 Pro:** test one-word and multi-word contact names, "call [name]" / "call to [name]", WhatsApp messages containing natural punctuation or multiple words, missing message text, duplicate contacts, denied Contacts/Call permissions, lock-screen use, and the actual WhatsApp handoff. Record whether each command was handled locally, time from end-of-utterance to action, and whether the exact intended contact/message was used.
-
----
-
-## 2. Updated Modular Architecture
+To maximize speed and eliminate duplicate effort, the work is divided based on each platform's unique strengths:
 
 ```
-┌────────────────────────────────────────────────────────────────────────┐
-│                        MainActivity (UI Layer)                         │
-│  - Quick Talk Button                                                   │
-│  - Wake Word Presets ("Hey Jarvis", "Jarvis", "Assistant")             │
-│  - API Key Configuration (Gemini / OpenAI)                             │
-│  - System Permission & Accessibility Toggles                           │
-└───────────────────────────────────┬────────────────────────────────────┘
-                                    │ Intents
-                                    ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│             LockScreenVoiceService (Foreground Service)                 │
-│  - Single Microphone Owner in App                                      │
-│  - WakeLock Management                                                 │
-│  - Continuous Voice Gate (ContinuousVoiceDetector.kt)                  │
-│  - Audio Routing & TTS Speech Dispatcher                               │
-└───────────────────────────────────┬────────────────────────────────────┘
-                                    │ Spoken text
-                                    ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│                           AIEngine.kt                                  │
-│  - Bounded 10s timeout with coroutine cancellation                     │
-│  - Orchestrator delegating to specialized providers:                   │
-├───────────────────────────────────┬────────────────────────────────────┤
-│         CommandParser.kt          │         OpenAiProvider.kt          │
-│  - Sub-millisecond deterministic  │  - Strict Function Calling (tools) │
-│    local regex matching (< 1ms)   │  - JSON Schema typed arguments     │
-├───────────────────────────────────┼────────────────────────────────────┤
-│        GeminiProvider.kt          │        SpeechInputManager.kt       │
-│  - Structured schema JSON         │  - API 31+ On-Device Speech        │
-│  - 3.6-flash / 3.5-flash-lite     │    recognition when available      │
-└───────────────────────────────────┴────────────────────────────────────┘
-                                    │ AIAction
-                                    ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│                       PhoneActionsManager.kt                           │
-│  - Phone calls, Accessibility gestures, App launches, Media playback   │
-└────────────────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────┐     ┌───────────────────────────────────────────────┐
+│              OPENAI CODEX                     │     │              ANTIGRAVITY (AGY)                │
+│  - Deep Architectural Design                  │     │  - Physical Device ADB Automation             │
+│  - Pure Kotlin Logic & Algorithm Optimization │     │  - CI/CD Build & Artifact Management          │
+│  - Pure Unit Test Suite Creation              │     │  - Realme 7 Pro Hardware / Audio HAL Testing  │
+│  - Complex Parsing & Normalization Logic      │     │  - Live Integration Verification              │
+│  - Code Review & Security Analysis            │     │  - App Deployment & Runtime Permissions Grant │
+└───────────────────────┬───────────────────────┘     └───────────────────────┬───────────────────────┘
+                        │                                                     │
+                        └───────────────────► Git Repo ◄──────────────────────┘
+                                    (Branch: `codex-dev` / `main`)
 ```
 
----
-
-## 3. Real Device Constraints & Hardware Findings (Realme 7 Pro)
-
-1. **ColorOS / OEM Audio HAL**:
-   - Calling `SpeechRecognizer.startListening()` in a tight 5-second loop triggers `OplusAtlasAudioDetectionManager` and `adev_get_parameters:get_audiodet_call` on Qualcomm hardware, causing clicking / buzzer sounds and dropping user speech.
-   - **Resolution**: `ContinuousVoiceDetector` (16kHz PCM `AudioRecord`) continuously monitors sound level with zero audio HAL restarts, and only activates `SpeechRecognizer` when voice energy is detected.
-
-2. **Microphone Exclusivity**:
-   - Centralized 100% of microphone ownership in `LockScreenVoiceService` to eliminate duplicate audio record conflicts.
-
-3. **Background Battery & Process Killing**:
-   - Foreground service running with `android:foregroundServiceType="microphone|mediaPlayback"` and `PARTIAL_WAKE_LOCK`.
+### 🧠 OpenAI Codex Responsibilities:
+1. **Core Architecture & Pure Logic**:
+   - Design and refine clean Kotlin classes with zero Android framework dependencies (such as `ContactMatcher.kt`, `WakeWordMatcher.kt`, `ConversationMemory.kt`, `CommandParser.kt`).
+2. **Comprehensive Unit Testing**:
+   - Author thorough JUnit 4 test suites that validate edge cases, string normalizations, scoring tiers, and memory states without needing a physical phone.
+3. **Logic Verification & Code Review**:
+   - Review Antigravity's Android integration changes, identifying potential concurrency issues, memory leaks, or missing edge cases.
+4. **Git Branch Workflow**:
+   - Commit and push changes to dedicated feature branches (e.g., `codex-dev` or `codex/feature-name`) on GitHub.
 
 ---
 
-## 4. Updates Implemented Based on Codex Review
-- ✅ **Strict OpenAI Function Calling (`tools` schema)**: Implemented in `OpenAiProvider.kt` with validated JSON parameter schemas for `call_contact`, `send_whatsapp`, `play_youtube`, `order_food`, `device_control`, and `clarify`.
-- ✅ **Deterministic Local Command Router**: Implemented in `CommandParser.kt` for instant execution without network latency.
-- ✅ **Modular Provider Architecture**: Decoupled `AIEngine.kt` into `CommandParser`, `OpenAiProvider`, and `GeminiProvider`.
-- ✅ **Guaranteed Resource Cleanup on Cancellation**: Implemented `continuation.resume(response) { response.close() }` to ensure zero OkHttp connection leaks under all coroutine cancellation timings.
-- ✅ **Silent Wake-Word Gating**: Audio energy detector opens a silent recognition session to verify the wake word without unprompted TTS interruptions from ambient room sounds.
-- ✅ **Hardware AudioRecord Release on Pause with Mutex Lock**: `ContinuousVoiceDetector` uses `@Volatile` flags and a synchronized monitor lock. `pause()` is called directly inside the capture thread on voice detection, stopping `audioRecord` before `onVoiceActivityDetected()` dispatches, guaranteeing zero hardware mic collisions.
-- ✅ **On-Device Speech Recognition**: Updated `SpeechInputManager.kt` to prefer `SpeechRecognizer.createOnDeviceSpeechRecognizer` on API 31+ when available.
+### ⚡ Antigravity (AGY) Responsibilities:
+1. **Hardware & OS Integration**:
+   - Manage real hardware quirks on Realme 7 Pro (Qualcomm Snapdragon 720G, ColorOS / Android 12), including AudioRecord HAL (*Hardware Abstraction Layer — software connecting Android to the physical microphone*), WakeLocks, and TelecomManager.
+2. **Physical Device Automation via ADB**:
+   - Run automated ADB (*Android Debug Bridge — the tool communicating with the connected phone*) test scripts (`scripts/test_device.ps1`), checking live background services, notification listeners, and audio permissions.
+3. **CI/CD & Deployment**:
+   - Trigger, monitor, and manage GitHub Actions CI (*Continuous Integration — automated cloud building of APKs*), download compiled APKs, and install them onto the phone via ADB.
+4. **Branch Merging & Integration Testing**:
+   - Fetch Codex's branches, merge them into `main`, verify the full test suite in CI, deploy to the physical device, and record live device logs.
+
+---
+
+## 2. Git Branching & Synchronization Protocol
+
+To ensure no uncommitted local work is overwritten and changes are easily compared:
+
+### Step 1: Codex Working on a Dedicated Branch
+- Codex commits changes to a branch named `codex-dev` or `codex/<feature-topic>`:
+  ```bash
+  git checkout -b codex-dev
+  # Make changes
+  git add .
+  git commit -m "Description of changes"
+  git push origin codex-dev
+  ```
+
+### Step 2: Antigravity Reviews, Merges, and Tests on Device
+- Antigravity fetches the branch from GitHub:
+  ```bash
+  git fetch origin codex-dev
+  git merge origin/codex-dev
+  ```
+- Antigravity runs unit tests and pushes to `main` to trigger the cloud CI build.
+- Antigravity installs the resulting APK on the Realme 7 Pro and runs the automated test harness (`test_device.ps1`).
+
+### Step 3: Feedback Loop
+- Antigravity updates `DEVELOPMENT_ROADMAP.md` and reports hardware test outcomes back in the repository for Codex to inspect on the next sync.
+
+---
+
+## 3. High-Priority Engineering Roadmap
+
+### Milestone 1: Local Phone Commands Dependability (IN PROGRESS)
+- [x] Extract `ContactMatcher.kt` with pure Kotlin scoring (exact, subset, prefix) and intelligent multi-number grouping.
+- [x] Add WhatsApp country code normalizer (`ensureCountryCode`) for local 10-digit Indian numbers.
+- [x] Unit test suite with 18 tests (`ContactMatcherTest.kt`) — all passing in CI.
+- [ ] Expand `CommandParser.kt` natural WhatsApp syntax (e.g., "whatsapp Mom I am on my way" without requiring "saying/that").
+- [ ] Automated end-to-end intent validation on Realme 7 Pro via ADB.
+
+### Milestone 2: Microphone & Audio Capture Reliability
+- [ ] Continuous voice energy detection tuning (RMS thresholds on 20ms frames).
+- [ ] Zero audio HAL collision between `AudioRecord` background listener and `Google SpeechRecognizer`.
+- [ ] Instant spoken wake confirmation ("Yes, I'm listening!").
+
+### Milestone 3: Bounded Conversational Context
+- [ ] Contextual pronoun follow-ups ("call him" / "message her") using `ConversationMemory.kt`.
+- [ ] 10-minute idle memory expiration.
+
+### Milestone 4: Setup, Permissions & Release
+- [ ] Battery optimization exemption and background overlay permissions guide.
+- [ ] Final release APK signing and automated test verification.
