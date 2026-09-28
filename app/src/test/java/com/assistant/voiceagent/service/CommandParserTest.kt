@@ -28,6 +28,62 @@ class CommandParserTest {
         assertTrue(result is AIAction.Clarify)
     }
 
+    @Test
+    fun parsesWhatsAppContactAndMessageWithoutSeparatorWords() {
+        assertEquals(
+            AIAction.SendWhatsApp("Mom", "I am on my way"),
+            CommandParser.parseDeterministic("whatsapp Mom I am on my way")
+        )
+        assertEquals(
+            AIAction.SendWhatsApp("Brother", "please call me back"),
+            CommandParser.parseDeterministic("text brother please call me back")
+        )
+        assertEquals(
+            AIAction.SendWhatsApp("Dad", "I reached safely"),
+            CommandParser.parseDeterministic("send a message to Dad I reached safely")
+        )
+    }
+
+    @Test
+    fun preservesMultiWordContactBeforeNaturalMessageOpening() {
+        assertEquals(
+            AIAction.SendWhatsApp("Naveen Kumar", "I am on my way"),
+            CommandParser.parseDeterministic("whatsapp Naveen Kumar I am on my way")
+        )
+    }
+
+    @Test
+    fun choosesLongestKnownMultiWordContactForUnmarkedMessage() {
+        assertEquals(
+            AIAction.SendWhatsApp("Naveen Kumar", "lunch at 8"),
+            CommandParser.parseDeterministic(
+                "whatsapp Naveen Kumar lunch at 8",
+                listOf("Naveen", "Naveen Kumar")
+            )
+        )
+    }
+
+    @Test
+    fun cleansPunctuationAtNaturalContactBoundaryButPreservesMessagePunctuation() {
+        assertEquals(
+            AIAction.SendWhatsApp("Mom", "I am on my way!"),
+            CommandParser.parseDeterministic("WhatsApp Mom, I am on my way!")
+        )
+    }
+
+    @Test
+    fun asksForClarificationInsteadOfGuessingInsideAnUnmarkedMultiWordPhrase() {
+        val result = CommandParser.parseDeterministic("whatsapp Naveen Kumar lunch at 8")
+        assertTrue(result is AIAction.Clarify)
+    }
+
+    @Test
+    fun requestsMessageWhenKnownContactIsProvidedWithoutMessage() {
+        val result = CommandParser.parseDeterministic("whatsapp Naveen Kumar", listOf("Naveen Kumar"))
+        assertTrue(result is AIAction.Clarify)
+        assertEquals("What message should I send to Naveen Kumar?", (result as AIAction.Clarify).question)
+    }
+
     // 3. Greetings & Identity
     @Test
     fun testGreetings() {

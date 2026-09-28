@@ -8,12 +8,21 @@ import java.util.Locale
 object CommandParser {
 
     private val STOP_WORDS = setOf("stop", "close", "bye", "goodbye", "cancel", "never mind", "quit", "exit", "shut up")
+    private val NATURAL_MESSAGE_START = Regex(
+        "\\s+(?:i am|i'm|im|i reached|i have|i've|i will|i'll|we are|we're|we have|we've|we will|we'll|" +
+            "please|call me|text me|message me|reached|on my way|running late|will be|can you|could you|" +
+            "do not|don't|let me|i need|i want|i can|just)\\b",
+        RegexOption.IGNORE_CASE
+    )
 
     /**
      * Ultra-fast deterministic local parser (< 1ms execution, 0 network latency).
      * Handles navigation, apps, phone calls, WhatsApp, YouTube, and device controls.
      */
-    fun parseDeterministic(userInput: String): AIAction? {
+    fun parseDeterministic(
+        userInput: String,
+        knownContactNames: Collection<String> = emptyList()
+    ): AIAction? {
         var clean = userInput.trim().lowercase().replace(Regex("[.?!,]"), "")
         var originalCommand = userInput.trim()
         // Strip conversational leading filler words (e.g. "and ", "please ", "can you ")
@@ -186,7 +195,7 @@ object CommandParser {
 
         // 5. WhatsApp: require a clear contact/message boundary so multi-word names
         // are not accidentally split into a one-word contact and partial message.
-        val whatsappAction = parseWhatsAppCommand(originalCommand)
+        val whatsappAction = parseWhatsAppCommand(originalCommand, knownContactNames)
         if (whatsappAction != null) return whatsappAction
 
         // 6. Food Ordering
@@ -251,7 +260,7 @@ object CommandParser {
             }
     }
 
-    private fun parseWhatsAppCommand(command: String): AIAction? {
+    private fun parseWhatsAppCommand(command: String, knownContactNames: Collection<String>): AIAction? {
         val prefixes = listOf(
             "send a whatsapp message to ", "send whatsapp message to ",
             "send a whatsapp to ", "send whatsapp to ", "whatsapp to ",
@@ -259,30 +268,88 @@ object CommandParser {
             "send a message on whatsapp to ", "send message on whatsapp to ",
             "send a message to ", "send message to ",
             "send a text on whatsapp to ", "send text on whatsapp to ",
-            "send a text to ", "send text to ", "message to ", "text to "
+            "send a text to ", "send text to ", "message to ", "text to ",
+            "whatsapp ", "text ", "message "
         )
         val prefix = prefixes.firstOrNull { command.startsWith(it, ignoreCase = true) } ?: return null
         val body = command.substring(prefix.length).trim()
+        if (body.isBlank()) return AIAction.Clarify("Who should I message on WhatsApp?")
 
-        val separator = Regex("\\s+(?:saying|say|that|message|msg|text)\\s+|\\s*:\\s*", RegexOption.IGNORE_CASE)
+        val separator = Regex("\\s+(?:saying|say|that|message|msg|text)(?:\\s+|$)|\\s*:\\s*", RegexOption.IGNORE_CASE)
         val match = separator.find(body)
-        if (match == null) {
-            val contactText = removeWhatsAppChannel(body)
-            val contact = formatName(contactText)
-            return if (contact.isBlank()) {
-                AIAction.Clarify("Who should I message on WhatsApp?")
-            } else {
-                AIAction.Clarify("What message should I send to $contact?")
-            }
+        if (match != null) {
+            val contact = formatName(cleanWhatsAppContact(body.substring(0, match.range.first)))
+            val message = body.substring(match.range.last + 1).trimStart(' ', '\t', ',', ':', ';', '-')
+            return makeWhatsAppAction(contact, message)
         }
 
-        val contactText = removeWhatsAppChannel(body.substring(0, match.range.first).trim())
-        val contact = formatName(contactText)
-        val message = body.substring(match.range.last + 1).trim()
+        // Prefer a full registered contact-name prefix. Matching whole name tokens
+        // keeps multi-word names such as "Naveen Kumar" intact.
+        val knownContactSplit = findKnownContactSplit(body, knownContactNames)
+        if (knownContactSplit != null) {
+            val (contact, message) = knownContactSplit
+            return makeWhatsAppAction(formatName(contact), message)
+        }
+
+        // Speech often omits "saying" or "that". Use common message openings as
+        // a boundary, while leaving the complete preceding phrase as the contact.
+        val naturalBoundary = findNaturalMessageBoundary(body)
+        if (naturalBoundary != null) {
+            val contact = formatName(cleanWhatsAppContact(body.substring(0, naturalBoundary)))
+            val message = body.substring(naturalBoundary).trimStart(' ', '\t', ',', ':', ';', '-')
+            return makeWhatsAppAction(contact, message)
+        }
+
+        val normalizedBody = normalizeWords(body)
+        val singleWordContact = normalizedBody.split(' ').size == 1
+        return if (singleWordContact) {
+            AIAction.Clarify("What message should I send to ${formatName(body)}?")
+        } else {
+            AIAction.Clarify("I couldn't tell where the contact name ends. Say the contact followed by the message, or use 'saying'.")
+        }
+    }
+
+    private fun makeWhatsAppAction(contact: String, message: String): AIAction {
         if (contact.isBlank()) return AIAction.Clarify("Who should I message on WhatsApp?")
         if (message.isBlank()) return AIAction.Clarify("What message should I send to $contact?")
         return AIAction.SendWhatsApp(contact, message)
     }
+
+    private fun findKnownContactSplit(
+        body: String,
+        knownContactNames: Collection<String>
+    ): Pair<String, String>? {
+        val bodyTokens = Regex("[\\p{L}\\p{N}]+").findAll(body).toList()
+        if (bodyTokens.isEmpty()) return null
+        val normalizedBodyTokens = bodyTokens.map { it.value.lowercase(Locale.ROOT) }
+
+        val candidates = knownContactNames.mapNotNull { displayName ->
+            val nameTokens = normalizeWords(displayName).split(' ').filter { it.isNotBlank() }
+            if (nameTokens.isEmpty() || nameTokens.size > bodyTokens.size) return@mapNotNull null
+            val matches = nameTokens.indices.all { index ->
+                nameTokens[index] == normalizedBodyTokens[index]
+            }
+            if (!matches) return@mapNotNull null
+
+            val end = bodyTokens[nameTokens.lastIndex].range.last + 1
+            val remainder = body.substring(end).trimStart(' ', '\t', ',', ':', ';', '-')
+            displayName to remainder
+        }
+
+        // Return an exact contact-only match too, so the caller can ask for the
+        // missing message instead of treating a multi-word name as ambiguous.
+        return candidates
+            .maxByOrNull { normalizeWords(it.first).split(' ').size }
+    }
+
+    private fun findNaturalMessageBoundary(body: String): Int? {
+        return NATURAL_MESSAGE_START.find(body)?.range?.first?.takeIf { it > 0 }
+    }
+
+    private fun normalizeWords(value: String): String = value.lowercase(Locale.ROOT)
+        .replace(Regex("[^\\p{L}\\p{N}]+"), " ")
+        .trim()
+        .replace(Regex("\\s+"), " ")
 
     private fun removeWhatsAppChannel(contact: String): String {
         return contact.replace(
@@ -290,6 +357,11 @@ object CommandParser {
             " "
         ).trim()
     }
+
+    private fun cleanWhatsAppContact(contact: String): String = removeWhatsAppChannel(contact)
+        .trim()
+        .trimEnd(',', ';', ':', '.', '!', '?', '-')
+        .trim()
 
     private fun removeLeadingPhrase(text: String, phrase: String): String {
         return if (text.startsWith(phrase, ignoreCase = true)) text.substring(phrase.length).trimStart(' ', '\t', ',', ':') else text

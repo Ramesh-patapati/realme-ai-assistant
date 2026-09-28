@@ -1,6 +1,9 @@
 package com.assistant.voiceagent.service
 
 import android.content.Context
+import android.Manifest
+import android.content.pm.PackageManager
+import android.provider.ContactsContract
 import android.util.Log
 import com.assistant.voiceagent.model.AIAction
 import kotlinx.coroutines.Dispatchers
@@ -24,6 +27,7 @@ class AIEngine(private val context: Context) {
     private val geminiProvider = GeminiProvider(httpClient)
     private val conversationMutex = Mutex()
     private val conversationMemory = ConversationMemory()
+    private var cachedContactNames: List<String>? = null
 
     /**
      * Process a user's spoken command with:
@@ -42,7 +46,12 @@ class AIEngine(private val context: Context) {
 
             // First handle deterministic commands locally. Resolve person references
             // such as "call him" from the recent in-memory conversation context.
-            val localAction = CommandParser.parseDeterministic(userInput)
+            var localAction = CommandParser.parseDeterministic(userInput)
+            if (localAction is AIAction.Clarify) {
+                // Retry only unclear local commands with the contact list available,
+                // allowing arbitrary message text after a complete multi-word name.
+                localAction = CommandParser.parseDeterministic(userInput, loadContactNames())
+            }
             if (localAction != null) {
                 val contextualAction = conversationMemory.resolveContactReference(localAction)
                 conversationMemory.rememberTurn(userInput, contextualAction)
@@ -69,6 +78,34 @@ class AIEngine(private val context: Context) {
             val contextualResult = conversationMemory.resolveContactReference(result)
             conversationMemory.rememberTurn(userInput, contextualResult)
             contextualResult
+        }
+    }
+
+    private fun loadContactNames(): List<String> {
+        cachedContactNames?.let { return it }
+        if (context.checkSelfPermission(Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
+            return emptyList()
+        }
+
+        return try {
+            val names = mutableSetOf<String>()
+            context.contentResolver.query(
+                ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                arrayOf(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                val nameIndex = cursor.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
+                while (cursor.moveToNext()) {
+                    cursor.getString(nameIndex)?.trim()?.takeIf { it.isNotBlank() }?.let(names::add)
+                }
+            } ?: return emptyList()
+
+            names.toList().also { cachedContactNames = it }
+        } catch (e: Exception) {
+            Log.w("AIEngine", "Unable to load contact names for WhatsApp parsing", e)
+            emptyList()
         }
     }
 }
