@@ -37,7 +37,7 @@ class ContinuousVoiceDetector(
     // Read 20 ms chunks and require a short sustained voice onset. This filters brief
     // clicks/impacts while starting recognition quickly enough to catch the wake word.
     private val frameSamples = sampleRate / 50
-    private val consecutiveSpeechFramesNeeded = 5
+    private val consecutiveSpeechFramesNeeded = 6
 
     @SuppressLint("MissingPermission")
     fun startListening() {
@@ -113,11 +113,11 @@ class ContinuousVoiceDetector(
                             }
 
                             // Trigger threshold: 2800.0 when music is active so user can speak over music,
-                            // or 1100.0 - 2000.0 in quiet room
+                            // or 1400.0 - 2500.0 in room to eliminate ambient noise false-triggers
                             val triggerThreshold = if (isMusicActive) {
                                 2800.0
                             } else {
-                                (baselineEnergy * 2.2).coerceIn(1100.0, 2000.0)
+                                (baselineEnergy * 2.6).coerceIn(1400.0, 2500.0)
                             }
 
                             if (rms > triggerThreshold) {
