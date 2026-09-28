@@ -21,11 +21,14 @@ Build the assistant in small, reviewable changes. For each change:
 - [x] Add focused automated tests for deterministic command parsing, contact normalization, WhatsApp reply stripping, and conversational follow-ups.
 - [x] Add host-side automated ADB test harness (`scripts/test_device.ps1`) passing 9/9 checks against Realme 7 Pro.
 
-### 1. Make local phone commands dependable
+### 1. Make local phone commands dependable — completed
 
-- [ ] Validate contact permission, exact/multiword/first-name matching, duplicate contacts, and ambiguous matches.
-- [ ] Validate direct calls, WhatsApp draft handoff, and truthful success/failure prompts.
-- [ ] Ensure local commands remain offline and never guess between different recipients.
+- [x] Validate contact permission, exact/multiword/first-name matching, duplicate contacts, and ambiguous matches via `ContactMatcher.kt` and 18 unit tests in `ContactMatcherTest.kt`.
+- [x] Group phone numbers by contact name to fix single-contact multi-number failures (superPrimary > primary > mobile > first).
+- [x] Add country code formatting (`ensureCountryCode`) for WhatsApp draft deep links (+91 auto-prefix for local Indian numbers).
+- [x] Validate direct calls, WhatsApp draft handoff, and truthful success/failure prompts.
+- [x] Ensure local commands remain offline and never guess between different recipients (explicit disambiguation listing candidates).
+- [x] Deploy and verify on physical Realme 7 Pro (9/9 automated host checks passing). Verified revision: `0ce8fe5`.
 
 ### 2. Make voice capture reliable
 
