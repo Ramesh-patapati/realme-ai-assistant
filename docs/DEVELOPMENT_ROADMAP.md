@@ -27,8 +27,8 @@ Build the assistant in small, reviewable changes. For each change:
 - [x] Group phone numbers by contact name to fix single-contact multi-number failures (superPrimary > primary > mobile > first).
 - [x] Add country code formatting (`ensureCountryCode`) for WhatsApp draft deep links (+91 auto-prefix for local Indian numbers).
 - [x] Validate direct calls, WhatsApp draft handoff, and truthful success/failure prompts.
-- [x] Ensure local commands remain offline and never guess between different recipients (explicit disambiguation listing candidates).
-- [x] Deploy and verify on physical Realme 7 Pro (9/9 automated host checks passing). Verified revision: `0ce8fe5`.
+- [x] Integrate natural WhatsApp phrasing parser (`CommandParser.kt`) with longest-match multi-word contact support and 6 JUnit test cases.
+- [x] Deploy and verify on physical Realme 7 Pro (9/9 automated host checks passing). Verified revision: `2d67ab1`.
 
 ### 2. Make voice capture reliable
 
