@@ -110,10 +110,37 @@ class LockScreenVoiceService : Service() {
 
         isBusy = true
         voiceDetector.pause()
-        Log.d("VoiceService", "Voice activity confirmed. Waking screen and responding...")
+        Log.d("VoiceService", "Voice energy detected. Silently verifying wake phrase...")
 
-        wakeScreen()
-        triggerVoiceInteraction("Yes, I'm listening!")
+        speechInputManager.startRecognitionSession(
+            onResult = { recognizedText ->
+                Log.d("VoiceService", "Utterance captured: '$recognizedText'")
+                val prefs = getSharedPreferences("ai_assistant_prefs", Context.MODE_PRIVATE)
+                val customWakeWord = prefs.getString("custom_wake_word", "hey jarvis") ?: "hey jarvis"
+                val (wakeWordMatched, cleanCommand) = WakeWordMatcher.match(recognizedText, customWakeWord)
+
+                if (wakeWordMatched) {
+                    Log.d("VoiceService", "Wake phrase MATCHED! Clean command: '$cleanCommand'")
+                    wakeScreen()
+                    if (cleanCommand.isNotBlank()) {
+                        processUserSpokenCommand(cleanCommand)
+                    } else {
+                        speakAndResume("Yes, I'm listening!") {
+                            mainHandler.postDelayed({
+                                listenForActiveCommand()
+                            }, 300L)
+                        }
+                    }
+                } else {
+                    Log.d("VoiceService", "Ignored speech without wake word: '$recognizedText'")
+                    resumeBackgroundListening()
+                }
+            },
+            onError = { errorCode, errorMessage ->
+                Log.d("VoiceService", "Silent wake recognition ended ($errorCode: $errorMessage)")
+                resumeBackgroundListening()
+            }
+        )
     }
 
     private fun wakeScreen() {

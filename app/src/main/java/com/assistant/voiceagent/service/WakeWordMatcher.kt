@@ -22,7 +22,8 @@ object WakeWordMatcher {
     private val HESITATION_FILLERS = setOf("uh", "um", "ah", "er", "oh")
     private val DEFAULT_JARVIS_ALIASES = listOf(
         "hey jarvis", "ok jarvis", "hello jarvis", "hi jarvis",
-        "jarvis", "hey javis", "javis", "jarves"
+        "jarvis", "hey javis", "javis", "jarves",
+        "hey jarvious", "jarvious", "hey jarvish", "jarvish"
     )
     private val SALUTATION_PREFIXES = listOf("hey ", "ok ", "hello ", "hi ")
 
