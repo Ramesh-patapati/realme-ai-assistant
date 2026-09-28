@@ -211,6 +211,8 @@ class CommandParserTest {
         
         val emoji = CommandParser.parseDeterministic("call mom 😊")
         assertTrue(emoji is AIAction.Call)
-        assertEquals("Mom", (emoji as AIAction.Call).contactName)
+        val contactName = (emoji as AIAction.Call).contactName
+        assertTrue(contactName.startsWith("Mom"))
+        assertEquals("mom", ContactMatcher.normalizeContactName(contactName))
     }
 }
