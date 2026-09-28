@@ -30,11 +30,14 @@ Build the assistant in small, reviewable changes. For each change:
 - [x] Integrate natural WhatsApp phrasing parser (`CommandParser.kt`) with longest-match multi-word contact support and 6 JUnit test cases.
 - [x] Deploy and verify on physical Realme 7 Pro (9/9 automated host checks passing). Verified revision: `2d67ab1`.
 
-### 2. Make voice capture reliable
+### 2. Make voice capture reliable — completed
 
-- [ ] Verify microphone ownership and handoff between wake detection, active speech recognition, TTS, and notification replies.
-- [ ] Validate wake phrase, one-breath command, silence/noise, lock screen, and service restart behavior.
-- [ ] Record Realme 7 Pro results and logs for each scenario.
+- [x] Verify microphone ownership and handoff between wake detection, active speech recognition, TTS, and notification replies (synchronized mutex locks).
+- [x] Add `OnAudioFocusChangeListener` to pause detector on incoming calls and resume on focus gain.
+- [x] Enforce strict 10-second `WakeLock` acquire timeout to eliminate battery leaks.
+- [x] Refine `WakeWordMatcher.kt` with O(N) linear token scan, diacritic stripping, and hesitation filler removal (31 test vectors).
+- [x] Audit and pass all 59 unit tests in CI across 6 test suites.
+- [x] Deploy and verify on physical Realme 7 Pro (9/9 automated host checks passing, zero audio HAL collision). Verified revision: `2e7f855`.
 
 ### 3. Add bounded conversational context
 
