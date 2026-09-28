@@ -14,6 +14,7 @@ class ConversationMemory(
     private var lastContactName: String? = null
 
     /** Expires old context and returns the history to attach to the current AI request. */
+    @Synchronized
     fun beginTurn(nowMs: Long): List<Pair<String, String>> {
         val previousInteraction = lastInteractionAtMs
         if (previousInteraction != null && nowMs - previousInteraction > idleTimeoutMs) {
@@ -23,6 +24,7 @@ class ConversationMemory(
         return history.toList()
     }
 
+    @Synchronized
     fun resolveContactReference(action: AIAction): AIAction = when (action) {
         is AIAction.Call -> {
             if (!isReference(action.contactName)) action
@@ -37,6 +39,7 @@ class ConversationMemory(
         else -> action
     }
 
+    @Synchronized
     fun rememberTurn(userInput: String, action: AIAction) {
         history.add("user" to userInput.trim())
         history.add("assistant" to summarize(action))
@@ -53,6 +56,7 @@ class ConversationMemory(
         }
     }
 
+    @Synchronized
     fun clear() {
         history.clear()
         lastContactName = null
@@ -85,7 +89,8 @@ class ConversationMemory(
 
         private val CONTACT_REFERENCES = setOf(
             "him", "her", "them", "he", "she", "they", "that person", "this person",
-            "the same person", "same person", "that contact", "the same contact"
+            "the same person", "same person", "that contact", "the same contact",
+            "back", "again", "last person", "last contact", "the last person", "the last contact"
         )
     }
 }

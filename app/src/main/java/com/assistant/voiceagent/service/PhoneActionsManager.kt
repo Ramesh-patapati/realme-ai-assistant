@@ -84,6 +84,13 @@ class PhoneActionsManager(private val context: Context) {
                 context.startActivity(callIntent)
             }
             ActionResult.Success("Calling $target")
+        } catch (e: SecurityException) {
+            val dialIntent = Intent(Intent.ACTION_DIAL).apply {
+                data = Uri.fromParts("tel", phoneNumber, null)
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            context.startActivity(dialIntent)
+            ActionResult.Success("Opened dialer for $target")
         } catch (e: Exception) {
             Log.e("PhoneActions", "Failed to initiate call", e)
             ActionResult.Failure("Failed to dial the number.")
@@ -198,6 +205,28 @@ class PhoneActionsManager(private val context: Context) {
     fun executeDeviceControl(command: String): ActionResult {
         if (command.equals("BATTERY", ignoreCase = true)) {
             return ActionResult.Success(getBatteryStatus())
+        }
+
+        if (command.equals("FLASHLIGHT_ON", ignoreCase = true)) {
+            return toggleFlashlight(true)
+        }
+
+        if (command.equals("FLASHLIGHT_OFF", ignoreCase = true)) {
+            return toggleFlashlight(false)
+        }
+
+        if (command.equals("OPEN_ALARM", ignoreCase = true) || command.equals("OPEN_CLOCK", ignoreCase = true)) {
+            val intent = Intent(android.provider.AlarmClock.ACTION_SHOW_ALARMS).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            return startActivityResult(intent, "Opening alarms")
+        }
+
+        if (command.equals("OPEN_TIMER", ignoreCase = true)) {
+            val intent = Intent(android.provider.AlarmClock.ACTION_SHOW_TIMERS).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            return startActivityResult(intent, "Opening timers")
         }
 
         if (command.equals("TAKE_PHOTO", ignoreCase = true)) {
@@ -437,6 +466,9 @@ class PhoneActionsManager(private val context: Context) {
             "browser" to listOf("com.android.chrome"),
             "camera" to listOf("com.oppo.camera", "com.oplus.camera", "com.android.camera2"),
             "settings" to listOf("com.android.settings"),
+            "clock" to listOf("com.coloros.alarmclock", "com.oplus.alarmclock", "com.google.android.deskclock", "com.android.deskclock"),
+            "alarm" to listOf("com.coloros.alarmclock", "com.oplus.alarmclock", "com.google.android.deskclock", "com.android.deskclock"),
+            "timer" to listOf("com.coloros.alarmclock", "com.oplus.alarmclock", "com.google.android.deskclock", "com.android.deskclock"),
             "maps" to listOf("com.google.android.apps.maps"),
             "gmail" to listOf("com.google.android.gm"),
             "play store" to listOf("com.android.vending"),
@@ -536,5 +568,25 @@ class PhoneActionsManager(private val context: Context) {
         val processInfo = ActivityManager.RunningAppProcessInfo()
         ActivityManager.getMyMemoryState(processInfo)
         return processInfo.importance <= ActivityManager.RunningAppProcessInfo.IMPORTANCE_VISIBLE
+    }
+
+    private fun toggleFlashlight(state: Boolean): ActionResult {
+        return try {
+            val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as? android.hardware.camera2.CameraManager
+            if (cameraManager != null) {
+                val cameraId = cameraManager.cameraIdList.firstOrNull()
+                if (cameraId != null) {
+                    cameraManager.setTorchMode(cameraId, state)
+                    ActionResult.Success(if (state) "Flashlight turned on" else "Flashlight turned off")
+                } else {
+                    ActionResult.Failure("No camera found for flashlight.")
+                }
+            } else {
+                ActionResult.Failure("Camera service not available.")
+            }
+        } catch (e: Exception) {
+            Log.e("PhoneActions", "Failed to toggle flashlight", e)
+            ActionResult.Failure("Failed to access flashlight.")
+        }
     }
 }

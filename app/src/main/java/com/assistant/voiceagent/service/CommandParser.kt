@@ -79,6 +79,22 @@ object CommandParser {
             "take a picture from front cam", "take a picture from the front cam",
             "take a picture from the frent cam", "take picture from front cam",
             "picture from front cam", "photo from front cam" -> return AIAction.DeviceControl("FRONT_CAMERA", "Opening front camera")
+
+            "turn on flashlight", "flashlight on", "turn on torch", "torch on" -> return AIAction.DeviceControl("FLASHLIGHT_ON", "Turning on flashlight")
+            "turn off flashlight", "flashlight off", "turn off torch", "torch off" -> return AIAction.DeviceControl("FLASHLIGHT_OFF", "Turning off flashlight")
+
+            "open alarm", "open clock", "open timer" -> return AIAction.OpenApp("clock")
+        }
+
+        if (clean.startsWith("set alarm for ") || clean.startsWith("set an alarm for ") || clean.startsWith("set alarm to ") || clean.startsWith("set an alarm to ")) {
+            val time = clean
+                .removePrefix("set alarm for ").removePrefix("set an alarm for ")
+                .removePrefix("set alarm to ").removePrefix("set an alarm to ").trim()
+            return AIAction.DeviceControl("SET_ALARM", "Setting alarm for $time")
+        }
+        if (clean.startsWith("set timer for ") || clean.startsWith("set a timer for ")) {
+            val duration = clean.removePrefix("set timer for ").removePrefix("set a timer for ").trim()
+            return AIAction.DeviceControl("SET_TIMER", "Setting timer for $duration")
         }
 
         // Unbundle compound prefixes like "open whatsapp and ...", "open youtube and ..."
@@ -261,6 +277,12 @@ object CommandParser {
     }
 
     private fun parseWhatsAppCommand(command: String, knownContactNames: Collection<String>): AIAction? {
+        val pronounPattern = Regex("^(?:send|text|message)\\s+(him|her|them)(?:\\s+a\\s+message(?:\\s+saying|\\s+that)?|\\s+saying|\\s+that)?\\s+(.+)", RegexOption.IGNORE_CASE)
+        val pronounMatch = pronounPattern.find(command.trim())
+        if (pronounMatch != null) {
+            return makeWhatsAppAction(formatName(pronounMatch.groupValues[1]), pronounMatch.groupValues[2])
+        }
+
         val prefixes = listOf(
             "send a whatsapp message to ", "send whatsapp message to ",
             "send a whatsapp to ", "send whatsapp to ", "whatsapp to ",

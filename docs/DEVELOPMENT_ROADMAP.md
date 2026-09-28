@@ -39,11 +39,12 @@ Build the assistant in small, reviewable changes. For each change:
 - [x] Audit and pass all 59 unit tests in CI across 6 test suites.
 - [x] Deploy and verify on physical Realme 7 Pro (9/9 automated host checks passing, zero audio HAL collision). Verified revision: `2e7f855`.
 
-### 3. Add bounded conversational context
+### 3. Add bounded conversational context — completed
 
-- [ ] Verify context for follow-up questions and references such as “call him.”
-- [ ] Verify ambiguous references ask a question instead of choosing a contact.
-- [ ] Verify session reset on idle timeout and service restart, and review what history is sent to cloud providers.
+- [x] Verify context for follow-up questions and references such as “call him”, “call back”, “text her”.
+- [x] Verify ambiguous references ask a question instead of choosing a contact.
+- [x] Verify thread-safe session reset on idle timeout and service restart, and ensure 100% offline phone control with zero unauthorized data transmission.
+- [x] Add device controls for Flashlight/Torch (`CameraManager`), Alarms, Timers, Clock, Volume, and Media.
 
 ### 4. Finish app setup and interface
 

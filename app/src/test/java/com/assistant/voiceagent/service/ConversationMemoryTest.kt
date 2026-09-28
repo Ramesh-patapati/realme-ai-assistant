@@ -26,6 +26,33 @@ class ConversationMemoryTest {
     }
 
     @Test
+    fun resolvesCallBackAndSimilarPhrasesToPreviousContact() {
+        val memory = ConversationMemory()
+        memory.rememberTurn("Call Naveen", AIAction.Call("Naveen"))
+
+        assertEquals(AIAction.Call("Naveen"), memory.resolveContactReference(AIAction.Call("back")))
+        assertEquals(AIAction.Call("Naveen"), memory.resolveContactReference(AIAction.Call("again")))
+        assertEquals(AIAction.Call("Naveen"), memory.resolveContactReference(AIAction.Call("last person")))
+    }
+
+    @Test
+    fun resolvesTextHimAndSendHerAMessageToPreviousContact() {
+        val memory = ConversationMemory()
+        memory.rememberTurn("Call Alice", AIAction.Call("Alice"))
+
+        assertEquals(AIAction.SendWhatsApp("Alice", "Hello"), memory.resolveContactReference(AIAction.SendWhatsApp("him", "Hello")))
+        assertEquals(AIAction.SendWhatsApp("Alice", "Hello"), memory.resolveContactReference(AIAction.SendWhatsApp("her", "Hello")))
+    }
+
+    @Test
+    fun ambiguousPronounReturnsClarifyWhenNoContactInMemory() {
+        val memory = ConversationMemory()
+        assertTrue(memory.resolveContactReference(AIAction.Call("him")) is AIAction.Clarify)
+        assertTrue(memory.resolveContactReference(AIAction.SendWhatsApp("her", "msg")) is AIAction.Clarify)
+        assertTrue(memory.resolveContactReference(AIAction.Call("back")) is AIAction.Clarify)
+    }
+
+    @Test
     fun exposesRecentTurnsAndCapsHistory() {
         val memory = ConversationMemory(maxHistoryMessages = 4)
         memory.beginTurn(100L)

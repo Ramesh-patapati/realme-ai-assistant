@@ -184,6 +184,52 @@ class CommandParserTest {
         assertEquals("BACK", (back as AIAction.DeviceControl).command)
     }
 
+    @Test
+    fun testFlashlightCommands() {
+        val onCommands = listOf("turn on flashlight", "flashlight on", "turn on torch", "torch on")
+        for (cmd in onCommands) {
+            val result = CommandParser.parseDeterministic(cmd)
+            assertTrue("Expected DeviceControl for '$cmd'", result is AIAction.DeviceControl)
+            assertEquals("FLASHLIGHT_ON", (result as AIAction.DeviceControl).command)
+        }
+
+        val offCommands = listOf("turn off flashlight", "flashlight off", "turn off torch", "torch off")
+        for (cmd in offCommands) {
+            val result = CommandParser.parseDeterministic(cmd)
+            assertTrue("Expected DeviceControl for '$cmd'", result is AIAction.DeviceControl)
+            assertEquals("FLASHLIGHT_OFF", (result as AIAction.DeviceControl).command)
+        }
+    }
+
+    @Test
+    fun testAlarmAndTimerCommands() {
+        val openCommands = listOf("open clock", "open alarm", "open timer")
+        for (cmd in openCommands) {
+            val result = CommandParser.parseDeterministic(cmd)
+            assertTrue("Expected OpenApp for '$cmd'", result is AIAction.OpenApp)
+            assertEquals("clock", (result as AIAction.OpenApp).appName)
+        }
+
+        val setAlarm = CommandParser.parseDeterministic("set alarm for 7 AM")
+        assertTrue(setAlarm is AIAction.DeviceControl)
+        assertEquals("SET_ALARM", (setAlarm as AIAction.DeviceControl).command)
+
+        val setTimer = CommandParser.parseDeterministic("set timer for 10 minutes")
+        assertTrue(setTimer is AIAction.DeviceControl)
+        assertEquals("SET_TIMER", (setTimer as AIAction.DeviceControl).command)
+    }
+
+    @Test
+    fun testCallBackCommands() {
+        val call1 = CommandParser.parseDeterministic("call back")
+        assertTrue(call1 is AIAction.Call)
+        assertEquals("Back", (call1 as AIAction.Call).contactName)
+
+        val call2 = CommandParser.parseDeterministic("call again")
+        assertTrue(call2 is AIAction.Call)
+        assertEquals("Again", (call2 as AIAction.Call).contactName)
+    }
+
     // 9. Time & Date
     @Test
     fun testTimeAndDate() {
