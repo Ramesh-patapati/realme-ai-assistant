@@ -67,7 +67,7 @@ class AIEngine(private val context: Context) {
                     } else if (geminiKey.isNotBlank()) {
                         geminiProvider.callGeminiWithFallback(userInput, geminiKey, historyForRequest)
                     } else {
-                        AIAction.Answer("Please set up your API key in the app settings.")
+                        AIAction.Answer("I am running in offline phone control mode. You can ask me to call, send WhatsApp messages, check battery, or open apps.")
                     }
                 } catch (e: Exception) {
                     Log.e("AIEngine", "AI execution failed", e)
