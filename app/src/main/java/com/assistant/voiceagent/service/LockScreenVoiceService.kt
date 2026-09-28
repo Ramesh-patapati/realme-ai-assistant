@@ -37,6 +37,21 @@ class LockScreenVoiceService : Service() {
     private var isBusy = false
     private var isServiceRunning = false
 
+    private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
+        when (focusChange) {
+            AudioManager.AUDIOFOCUS_LOSS, AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                Log.d("VoiceService", "Audio focus lost. Pausing listening.")
+                isBusy = true
+                if (::voiceDetector.isInitialized) voiceDetector.pause()
+                if (::speechInputManager.isInitialized) speechInputManager.destroyRecognizer()
+            }
+            AudioManager.AUDIOFOCUS_GAIN -> {
+                Log.d("VoiceService", "Audio focus gained.")
+                resumeBackgroundListening()
+            }
+        }
+    }
+
     companion object {
         const val CHANNEL_ID = "ai_assistant_foreground_channel"
         const val NOTIFICATION_ID = 1001
@@ -54,9 +69,24 @@ class LockScreenVoiceService : Service() {
         val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "AIAssistant:VoiceWakeLock")
         try {
-            wakeLock?.acquire()
+            wakeLock?.acquire(10000L)
         } catch (e: Exception) {
             Log.w("VoiceService", "Could not acquire wakeLock: ${e.message}")
+        }
+
+        val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val focusRequest = android.media.AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE)
+                .setOnAudioFocusChangeListener(audioFocusChangeListener)
+                .build()
+            audioManager.requestAudioFocus(focusRequest)
+        } else {
+            @Suppress("DEPRECATION")
+            audioManager.requestAudioFocus(
+                audioFocusChangeListener,
+                AudioManager.STREAM_MUSIC,
+                AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE
+            )
         }
 
         ttsManager = TtsManager(this)

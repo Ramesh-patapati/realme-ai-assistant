@@ -191,4 +191,25 @@ class CommandParserTest {
         assertTrue(time is AIAction.Answer)
         assertTrue((time as AIAction.Answer).replyText.startsWith("It is"))
     }
+
+    // 10. Edge Cases & Invalid Input
+    @Test
+    fun handlesEmptyOrBlankInputSafely() {
+        val empty = CommandParser.parseDeterministic("")
+        assertTrue(empty is AIAction.None || empty is AIAction.Clarify)
+        val blank = CommandParser.parseDeterministic("   ")
+        assertTrue(blank is AIAction.None || blank is AIAction.Clarify)
+    }
+
+    @Test
+    fun handlesUnicodeAndRTLCharacters() {
+        // Arabic, Chinese, Emoji
+        val result = CommandParser.parseDeterministic("مرحبا") // greeting in Arabic
+        // Assuming the parser might drop it or return clarification, just ensure it doesn't crash
+        assertTrue(result != null)
+        
+        val emoji = CommandParser.parseDeterministic("call mom 😊")
+        // Just verify it doesn't crash, perhaps ignores emojis or still calls mom
+        assertTrue(emoji != null)
+    }
 }

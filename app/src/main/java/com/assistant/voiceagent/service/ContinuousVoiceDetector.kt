@@ -82,11 +82,19 @@ class ContinuousVoiceDetector(
 
                         var read = 0
                         synchronized(lock) {
-                            if (!isPaused && isRecording && audioRecord?.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
+                            if (!isPaused && isRecording && audioRecord != null && audioRecord?.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
                                 try {
                                     read = audioRecord?.read(buffer, 0, buffer.size) ?: 0
+                                    if (read < 0) {
+                                        Log.w("VoiceDetector", "AudioRecord read error code: $read")
+                                        releaseAudioRecordUnsafe()
+                                        isRecording = false
+                                        read = 0
+                                    }
                                 } catch (e: Exception) {
                                     Log.w("VoiceDetector", "AudioRecord read exception", e)
+                                    releaseAudioRecordUnsafe()
+                                    isRecording = false
                                     read = 0
                                 }
                             }
@@ -187,18 +195,22 @@ class ContinuousVoiceDetector(
             isPaused = false
             recordingThread?.interrupt()
             recordingThread = null
-
-            try {
-                if (audioRecord?.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
-                    audioRecord?.stop()
-                }
-                audioRecord?.release()
-                audioRecord = null
-                Log.d("VoiceDetector", "Continuous AudioRecord released")
-            } catch (e: Exception) {
-                Log.e("VoiceDetector", "Error stopping/releasing AudioRecord", e)
-            }
+            releaseAudioRecordUnsafe()
             Unit
+        }
+    }
+
+    private fun releaseAudioRecordUnsafe() {
+        try {
+            if (audioRecord?.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
+                audioRecord?.stop()
+            }
+            audioRecord?.release()
+            audioRecord = null
+            Log.d("VoiceDetector", "Continuous AudioRecord released")
+        } catch (e: Exception) {
+            Log.e("VoiceDetector", "Error stopping/releasing AudioRecord", e)
+            audioRecord = null
         }
     }
 }
