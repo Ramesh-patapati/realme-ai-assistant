@@ -47,6 +47,25 @@ class MainActivity : AppCompatActivity() {
 
         loadSavedSettings()
         setupListeners()
+        checkAndRequestAppPermissions()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        updatePermissionStatus()
+    }
+
+    private fun updatePermissionStatus() {
+        val hasMic = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        val hasContacts = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
+        val hasPhone = ContextCompat.checkSelfPermission(this, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED
+
+        if (hasMic && hasContacts && hasPhone) {
+            binding.tvServiceStatus.text = "● Service: Active & Listening"
+            startVoiceService(null)
+        } else {
+            binding.tvServiceStatus.text = "● Permissions needed: Tap 'Grant Standard Permissions'"
+        }
     }
 
     private fun loadSavedSettings() {
